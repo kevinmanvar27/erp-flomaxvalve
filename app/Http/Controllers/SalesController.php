@@ -1,0 +1,996 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Helpers\PermissionHelper;
+use App\Models\FinishedProduct;
+use App\Models\Sales;
+use App\Models\StakeHolder;
+use App\Models\Invoice;
+use App\Models\InvoiceItem;
+use App\Models\Product;
+use App\Models\ProductItem;
+use App\Models\Setting;
+use App\Models\SparePart;
+use Illuminate\Http\Request;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Carbon\Carbon;
+
+class SalesController extends Controller
+{
+    /**
+     * Display a listing of the resource.
+     */
+    public function index(Request $request)
+    {
+        if (!PermissionHelper::hasPermission('sales', 'read')) {
+            abort(403, 'Unauthorized action.');
+        }
+        return view('sales.index');
+    }
+
+    public function getData(Request $request)
+    {
+        $query = Invoice::query()->with('customer');
+
+        // Apply filtering
+        if ($request->has('search') && is_array($request->input('search'))) {
+            $search = $request->input('search')['value'];
+            $query->where(function ($q) use ($search) {
+                $q->where('invoice', 'like', "%{$search}%")
+                    ->orWhereHas('customer', function ($q) use ($search) {
+                        $q->where('name', 'like', "%{$search}%");
+                    })
+                    ->orWhere('create_date', 'like', "%{$search}%")
+                    ->orWhere('due_date', 'like', "%{$search}%");
+            });
+        }
+
+        // Apply sorting
+        $column = $request->input('order.0.column');
+        $direction = $request->input('order.0.dir');
+        $columns = ['create_date', 'invoice', 'customer.name', 'amount', 'total_item'];
+        if (isset($columns[$column])) {
+            $query->orderBy($columns[$column], $direction);
+        }
+
+        // Pagination
+        $length = $request->input('length');
+        $start = $request->input('start');
+        $data = $query->skip($start)->take($length)->get();
+
+        $totalRecords = Invoice::count();
+        $filteredRecords = $query->count();
+
+        // Format data for DataTables
+        $data = $data->isEmpty() ? [] : $data->map(function ($invoice, $index) use ($start) {
+            // Determine the action buttons
+            $actionButtons = '<a href="' . route('sales.edit', $invoice->id) . '" class="btn btn-primary btn-sm">Edit</a>
+                           <form action="' . route('sales.destroy', $invoice->id) . '" method="POST" style="display:inline;" class="delete-form">
+                               ' . csrf_field() . '
+                               ' . method_field('DELETE') . '
+                               <button type="submit" class="btn btn-danger btn-sm btn-delete">Delete</button>
+                           </form>';
+
+            if ($invoice->status == 'completed') {
+                $actionButtons = '<a href="' . route('sales.download', $invoice->id) . '" class="btn btn-success btn-sm">Download PDF</a>
+                    ' . $actionButtons;
+            }
+
+            // Calculate pending amount
+            $receivedAmount = $invoice->received_amount ?? 0;
+            $pendingAmount = $invoice->sub_total - $receivedAmount;
+
+            // Add receive amount button only if there's pending amount
+            $receiveButton = '';
+            if ($pendingAmount > 0) {
+                $receiveButton = '<button type="button" class="btn btn-info btn-sm btn-receive-amount" 
+                    data-id="' . $invoice->id . '" 
+                    data-invoice="' . $invoice->invoice . '" 
+                    data-total="' . $invoice->sub_total . '" 
+                    data-received="' . $receivedAmount . '" 
+                    data-pending="' . $pendingAmount . '">
+                    Receive Amount
+                </button> ';
+            }
+
+            return [
+                'id' => $start + $index + 1,
+                'create_date' => $invoice->create_date,
+                'invoice' => $invoice->invoice,
+                'customer_name' => $invoice->customer->name,
+                'amount' => number_format($invoice->sub_total, 2),
+                'received_amount' => number_format($receivedAmount, 2),
+                'pending_amount' => number_format($pendingAmount, 2),
+                'total_item' => $invoice->items->count(),
+                'action' => $receiveButton . $actionButtons,
+            ];
+        });
+
+        return response()->json([
+            'draw' => intval($request->input('draw')),
+            'recordsTotal' => $totalRecords,
+            'recordsFiltered' => $filteredRecords,
+            'data' => $data
+        ]);
+    }
+
+    // public function create()
+    // {
+    //     if (!PermissionHelper::hasPermission('sales', 'write')) {
+    //         abort(403, 'Unauthorized action.');
+    //     }
+    //     // Fetch clients from the stake_holder table
+    //     $clients = StakeHolder::orderBy('name', 'asc')->get();
+
+    //     // Fetch products from the finished_products table with available quantity
+    //     $products = FinishedProduct::with(['product' => function ($query) {
+    //         $query->select('id', 'name', 'product_code', 'valve_type', 'mrp');
+    //     }])
+    //         ->where('quantity', '>', 0)
+    //         ->get()
+    //         ->map(function ($finishedProduct) {
+    //             return $finishedProduct->product;
+    //         });
+
+    //     $currentDate = Carbon::now();
+    //     $currentMonth = $currentDate->format('m');
+    //     $financialYearStart = $currentDate->month >= 4 ? $currentDate->year : $currentDate->year - 1;
+    //     $financialYearEnd = $financialYearStart + 1;
+    //     $financialYear = substr($financialYearStart, -2) . '-' . substr($financialYearEnd, -2);
+
+    //     // Generate the next invoice number
+    //     $latestInvoice = Invoice::latest('id')->first();
+    //     if ($latestInvoice) {
+    //         $latestInvoiceNumber = $latestInvoice->invoice;
+    //         $latestInvoiceNumberParts = explode('/', $latestInvoiceNumber);
+    //         $latestInvoiceNumberPrefix = $latestInvoiceNumberParts[0];
+    //         $latestInvoiceParts = explode('-', $latestInvoiceNumberPrefix);
+    //         $latestInvoiceNumberSuffix = $latestInvoiceParts[1];
+    //         $number = (int)substr($latestInvoiceNumberSuffix, -2);
+    //         $newNumber = str_pad($number + 1, 2, '0', STR_PAD_LEFT);
+    //         $invoiceNumber = 'FSVINV-' .$newNumber .'-' . $currentMonth .  '/' . $financialYear;
+    //     } else {
+    //         $invoiceNumber = 'FSVINV-01-' . $currentMonth . '/' . $financialYear;
+    //     }
+
+    //     return view('sales.create', compact('clients', 'products', 'invoiceNumber'));
+    // }
+    
+    
+    public function create()
+{
+    if (!PermissionHelper::hasPermission('sales', 'write')) {
+        abort(403, 'Unauthorized action.');
+    }
+
+    // Fetch clients from the stake_holder table
+    $clients = StakeHolder::orderBy('name', 'asc')->get();
+
+    // Fetch products from the finished_products table with available quantity
+    // Group by product_id to get unique products with total merged quantity
+    $products = FinishedProduct::select('product_id', \DB::raw('SUM(quantity) as total_quantity'))
+        ->where('quantity', '>', 0)
+        ->groupBy('product_id')
+        ->having(\DB::raw('SUM(quantity)'), '>', 0)
+        ->get()
+        ->map(function ($finishedProduct) {
+            $product = Product::select('id', 'name', 'product_code', 'valve_type', 'mrp')
+                ->find($finishedProduct->product_id);
+            if ($product) {
+                $product->available_quantity = $finishedProduct->total_quantity;
+            }
+            return $product;
+        })
+        ->filter() // Remove null products
+        ->sortBy('name') // Sort by product name
+        ->values(); // Re-index the collection
+
+    $currentDate = Carbon::now();
+    $currentMonth = $currentDate->format('m');
+    $financialYearStart = $currentDate->month >= 4 ? $currentDate->year : $currentDate->year - 1;
+    $financialYearEnd = $financialYearStart + 1;
+    $financialYear = substr($financialYearStart, -2) . '-' . substr($financialYearEnd, -2);
+
+    // Generate the next invoice number
+    $latestInvoice = Invoice::latest('id')->first();
+    if ($latestInvoice) {
+        $latestInvoiceNumber = $latestInvoice->invoice;
+        $latestInvoiceNumberParts = explode('/', $latestInvoiceNumber);
+        $latestInvoiceNumberPrefix = $latestInvoiceNumberParts[0];
+        $latestInvoiceParts = explode('-', $latestInvoiceNumberPrefix);
+        $latestInvoiceNumberSuffix = $latestInvoiceParts[1];
+
+        // Parse full number (no substr, no str_pad)
+        $number = (int)$latestInvoiceNumberSuffix;
+        $newNumber = $number + 1;
+
+        $invoiceNumber = 'FSVINV-' . $newNumber . '-' . $currentMonth . '/' . $financialYear;
+    } else {
+        $invoiceNumber = 'FSVINV-1-' . $currentMonth . '/' . $financialYear;
+    }
+
+    return view('sales.create', compact('clients', 'products', 'invoiceNumber'));
+}
+
+
+
+    public function store(Request $request)
+    {
+        if (!PermissionHelper::hasPermission('sales', 'update')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        try {
+            // Validate request data
+            $validated = $request->validate([
+                'client_name' => 'required|exists:stake_holders,id',
+                'invoice' => 'required|string|unique:invoices,invoice',
+                'status' => 'required|string',
+                'address' => 'nullable|string',
+                'date' => 'required|date',
+                'due_date' => 'required|date',
+                'remark' => 'nullable',
+                'item.*' => 'required|exists:products,id',
+                'quantity.*' => 'required|numeric|min:1',
+                'subtotal' => 'required|numeric|min:0',
+                'discount' => 'nullable|numeric|min:0',
+                'pfcouriercharge' => 'nullable|numeric|min:0',
+                'courier_charge' => 'nullable|numeric|min:0',
+                'balance' => 'required|numeric|min:0',
+                'cgst' => 'nullable|numeric|min:0',
+                'sgst' => 'nullable|numeric|min:0',
+                'igst' => 'nullable|numeric|min:0',
+                'discount_type' => 'nullable|string',
+                'round_off' => 'nullable',
+            ]);
+
+            // Get the list of items, quantities, and remarks
+            $items = $request->input('item');
+            $quantities = $request->input('quantity');
+            $remarks = $request->input('remark');
+            $errors = [];
+
+            // Check finished products for sufficient quantity (for main products)
+            foreach ($items as $index => $item) {
+                $finishedProduct = FinishedProduct::where('product_id', $item)->first();
+                $requestedQuantity = $quantities[$index];
+
+                if (!$finishedProduct || $finishedProduct->quantity < $requestedQuantity) {
+                    $product = Product::find($item);
+                    $errors[] = 'Insufficient quantity for product: ' . $product->name;
+                }
+            }
+
+            // Check finished products for sufficient quantity (for remark products)
+            foreach ($remarks as $index => $remarkValue) {
+                // Skip if remark is empty or not a product
+                if (empty($remarkValue)) {
+                    continue;
+                }
+
+                // Find the product ID from the product name in remark
+                $remarkProduct = Product::where('name', $remarkValue)->first();
+
+                if ($remarkProduct) {
+                    $finishedProduct = FinishedProduct::where('product_id', $remarkProduct->id)->first();
+                    $requestedQuantity = $quantities[$index]; // Use the same quantity as the main product
+
+                    if (!$finishedProduct || $finishedProduct->quantity < $requestedQuantity) {
+                        $errors[] = 'Insufficient quantity for remark product: ' . $remarkProduct->name;
+                    }
+                }
+            }
+
+            if (!empty($errors)) {
+                return redirect()->back()->withErrors($errors)->withInput();
+            }
+
+            // Create the invoice record
+            $invoice = Invoice::create([
+                'address' => $request->input('address'),
+                'create_date' => $request->input('date'),
+                'due_date' => $request->input('due_date'),
+                'invoice' => $request->input('invoice'),
+                'note' => $request->input('note'),
+                'remark' => $request->input('remark'),
+                'lrno' => $request->input('lrno'),
+                'transport' => $request->input('transport'),
+                'orderno' => $request->input('orderno'),
+                'courier_charge' => $request->input('courier_charge'),
+                'status' => $request->input('status'),
+                'sub_total' => $request->input('subtotal'),
+                'discount' => $request->input('discount'),
+                'balance' => $request->input('balance'),
+                'customer_id' => $request->input('client_name'),
+                'cgst' => $request->input('cgst'),
+                'sgst' => $request->input('sgst'),
+                'igst' => $request->input('igst'),
+                'discount_type' => $request->input('discount_type'),
+                'pfcouriercharge' => $request->input('pfcouriercharge'),
+                'round_off' => $request->input('round_off'),
+            ]);
+
+            // Insert the invoice items and deduct finished product quantities
+            $prices = $request->input('price');
+            $amounts = $request->input('amount');
+
+            foreach ($items as $index => $item) {
+                // Deduct the main product quantity
+                $finishedProduct = FinishedProduct::where('product_id', $item)->first();
+                $requestedQuantity = $quantities[$index];
+
+                if ($finishedProduct) {
+                    $finishedProduct->quantity -= $requestedQuantity;
+                    $finishedProduct->save();
+                }
+
+                // Create the invoice item
+                InvoiceItem::create([
+                    'invoice_id' => $invoice->id,
+                    'product_id' => $item,
+                    'quantity' => $requestedQuantity,
+                    'price' => $prices[$index],
+                    'remark' => $remarks[$index],
+                    'amount' => $amounts[$index],
+                ]);
+
+                // If a product is selected in the remark dropdown, deduct its quantity as well
+                if (!empty($remarks[$index])) {
+                    $remarkProduct = Product::where('name', $remarks[$index])->first();
+
+                    if ($remarkProduct) {
+                        $remarkFinishedProduct = FinishedProduct::where('product_id', $remarkProduct->id)->first();
+
+                        if ($remarkFinishedProduct) {
+                            $remarkFinishedProduct->quantity -= $requestedQuantity;
+                            $remarkFinishedProduct->save();
+                        }
+                    }
+                }
+            }
+
+            return redirect()->route('sales.index')->with('success', 'Invoice created successfully.');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'status' => 'error',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+
+    public function edit($id)
+    {
+        if (!PermissionHelper::hasPermission('sales', 'update')) {
+            abort(403, 'Unauthorized action.');
+        }
+        $invoice = Invoice::with('items')->findOrFail($id);
+        $clients = StakeHolder::all();
+
+        // Get products from finished_products with unique products and total merged quantity
+        $products = FinishedProduct::select('product_id', \DB::raw('SUM(quantity) as total_quantity'))
+            ->where('quantity', '>', 0)
+            ->groupBy('product_id')
+            ->having(\DB::raw('SUM(quantity)'), '>', 0)
+            ->get()
+            ->map(function ($finishedProduct) {
+                $product = Product::select('id', 'name', 'product_code', 'valve_type', 'mrp')
+                    ->find($finishedProduct->product_id);
+                if ($product) {
+                    $product->available_quantity = $finishedProduct->total_quantity;
+                }
+                return $product;
+            })
+            ->filter();
+
+        // Add products from current invoice if not in finished products (for already selected items)
+        $invoiceProducts = Product::select('id', 'name', 'product_code', 'valve_type', 'mrp')
+            ->whereIn('id', $invoice->items->pluck('product_id'))
+            ->whereNotIn('id', $products->pluck('id'))
+            ->get()
+            ->map(function ($product) {
+                $product->available_quantity = 0; // Already sold, no stock available
+                return $product;
+            });
+
+        $products = $products->concat($invoiceProducts)->sortBy('name')->values();
+
+        return view('sales.edit', compact('invoice', 'clients', 'products'));
+    }
+
+    public function update(Request $request, $id)
+    {
+        // Validate request data
+        $request->validate([
+            'client_name' => 'required|exists:stake_holders,id',
+            'invoice' => 'required|string',
+            'status' => 'required|string',
+            'address' => 'nullable|string',
+            'remark' => 'nullable',
+            'date' => 'required|date',
+            'due_date' => 'required|date',
+            'item.*' => 'required|exists:products,id',
+            'quantity.*' => 'required|numeric|min:1',
+            'subtotal' => 'required|numeric|min:0',
+            'discount' => 'nullable|numeric|min:0',
+            'pfcouriercharge' => 'nullable|numeric|min:0',
+            'courier_charge' => 'nullable|numeric|min:0',
+            'balance' => 'required|numeric|min:0',
+            'cgst' => 'nullable|numeric|min:0',
+            'sgst' => 'nullable|numeric|min:0',
+            'igst' => 'nullable|numeric|min:0',
+            'discount_type' => 'nullable|string',
+            'round_off' => 'nullable',
+        ]);
+
+        // Find the invoice record
+        $invoice = Invoice::findOrFail($id);
+
+        // Get the existing invoice items before updating
+        $existingItems = $invoice->items()->get();
+
+        // First restore all quantities back to FinishedProduct for main products
+        foreach ($existingItems as $existingItem) {
+            $finishedProduct = FinishedProduct::where('product_id', $existingItem->product_id)->first();
+            if ($finishedProduct) {
+                $finishedProduct->quantity += $existingItem->quantity; // Restore old quantity
+                $finishedProduct->save();
+            }
+
+            // Also restore quantities for products that were used in remarks
+            if (!empty($existingItem->remark)) {
+                $remarkProduct = Product::where('name', $existingItem->remark)->first();
+
+                if ($remarkProduct) {
+                    $remarkFinishedProduct = FinishedProduct::where('product_id', $remarkProduct->id)->first();
+
+                    if ($remarkFinishedProduct) {
+                        $remarkFinishedProduct->quantity += $existingItem->quantity; // Restore old quantity
+                        $remarkFinishedProduct->save();
+                    }
+                }
+            }
+        }
+
+        // Get the new items and quantities from the request
+        $items = $request->input('item');
+        $quantities = $request->input('quantity');
+        $prices = $request->input('price');
+        $amounts = $request->input('amount');
+        $remarks = $request->input('remark');
+
+        $errors = [];
+
+        // Check for sufficient quantity with new quantities (for main products)
+        foreach ($items as $index => $itemId) {
+            $finishedProduct = FinishedProduct::where('product_id', $itemId)->first();
+            $requestedQuantity = $quantities[$index];
+
+            if (!$finishedProduct || $finishedProduct->quantity < $requestedQuantity) {
+                $product = Product::find($itemId);
+                $errors[] = 'Insufficient quantity for product: ' . $product->name;
+            }
+        }
+
+        // Check for sufficient quantity (for remark products)
+        foreach ($remarks as $index => $remarkValue) {
+            // Skip if remark is empty or not a product
+            if (empty($remarkValue)) {
+                continue;
+            }
+
+            // Find the product ID from the product name in remark
+            $remarkProduct = Product::where('name', $remarkValue)->first();
+
+            if ($remarkProduct) {
+                $finishedProduct = FinishedProduct::where('product_id', $remarkProduct->id)->first();
+                $requestedQuantity = $quantities[$index]; // Use the same quantity as the main product
+
+                if (!$finishedProduct || $finishedProduct->quantity < $requestedQuantity) {
+                    $errors[] = 'Insufficient quantity for remark product: ' . $remarkProduct->name;
+                }
+            }
+        }
+
+        if (!empty($errors)) {
+            // If there are errors, restore the original deductions
+            foreach ($existingItems as $existingItem) {
+                // Restore main product quantities
+                $finishedProduct = FinishedProduct::where('product_id', $existingItem->product_id)->first();
+                if ($finishedProduct) {
+                    $finishedProduct->quantity -= $existingItem->quantity; // Reapply the original deduction
+                    $finishedProduct->save();
+                }
+
+                // Restore remark product quantities
+                if (!empty($existingItem->remark)) {
+                    $remarkProduct = Product::where('name', $existingItem->remark)->first();
+
+                    if ($remarkProduct) {
+                        $remarkFinishedProduct = FinishedProduct::where('product_id', $remarkProduct->id)->first();
+
+                        if ($remarkFinishedProduct) {
+                            $remarkFinishedProduct->quantity -= $existingItem->quantity; // Reapply the original deduction
+                            $remarkFinishedProduct->save();
+                        }
+                    }
+                }
+            }
+            return redirect()->back()->withErrors($errors)->withInput();
+        }
+        
+        
+        // Update the invoice itself
+        $invoice->update([
+            'address' => $request->input('address'),
+            'create_date' => $request->input('date'),
+            'due_date' => $request->input('due_date'),
+            'invoice' => $request->input('invoice'),
+            'note' => $request->input('note'),
+            'lrno' => $request->input('lrno'),
+            'orderno' => $request->input('orderno'),
+            'transport' => $request->input('transport'),
+            'courier_charge' => $request->input('courier_charge'),
+            'status' => $request->input('status'),
+            'sub_total' => $request->input('subtotal'),
+            'discount' => $request->input('discount'),
+            'balance' => $request->input('balance'),
+            'customer_id' => $request->input('client_name'),
+            'cgst' => $request->input('cgst'),
+            'sgst' => $request->input('sgst'),
+            'igst' => $request->input('igst'),
+            'discount_type' => $request->input('discount_type'),
+            'pfcouriercharge' => $request->input('pfcouriercharge'),
+            'round_off' => $request->input('round_off'),
+        ]);
+
+        // Delete all existing items
+        $invoice->items()->delete();
+
+        // Create new items and deduct new quantities
+        foreach ($items as $index => $itemId) {
+            $requestedQuantity = $quantities[$index];
+
+            // Deduct new quantity from FinishedProduct for main product
+            $finishedProduct = FinishedProduct::where('product_id', $itemId)->first();
+            if ($finishedProduct) {
+                $finishedProduct->quantity -= $requestedQuantity;
+                $finishedProduct->save();
+            }
+
+            // Create new invoice item
+            InvoiceItem::create([
+                'invoice_id' => $invoice->id,
+                'product_id' => $itemId,
+                'quantity' => $requestedQuantity,
+                'price' => $prices[$index],
+                'amount' => $amounts[$index],
+                'remark' => isset($remarks[$index]) ? $remarks[$index] : null,
+            ]);
+
+            // If a product is selected in the remark dropdown, deduct its quantity as well
+            if (!empty($remarks[$index])) {
+                $remarkProduct = Product::where('name', $remarks[$index])->first();
+
+                if ($remarkProduct) {
+                    $remarkFinishedProduct = FinishedProduct::where('product_id', $remarkProduct->id)->first();
+
+                    if ($remarkFinishedProduct) {
+                        $remarkFinishedProduct->quantity -= $requestedQuantity;
+                        $remarkFinishedProduct->save();
+                    }
+                }
+            }
+        }
+
+        return redirect()->route('sales.index')->with('success', 'Invoice updated successfully.');
+    }
+
+    public function destroy($id)
+    {
+        if (!PermissionHelper::hasPermission('sales', 'update')) {
+            abort(403, 'Unauthorized action.');
+        }
+        try {
+            // Find the invoice by ID
+            $invoice = Invoice::with('items')->findOrFail($id);
+
+            // Restore quantities to FinishedProduct table for main products
+            foreach ($invoice->items as $item) {
+                // Restore main product quantity
+                $finishedProduct = FinishedProduct::where('product_id', $item->product_id)->first();
+                if ($finishedProduct) {
+                    $finishedProduct->quantity += $item->quantity;
+                    $finishedProduct->save();
+                } else {
+                    // Create new FinishedProduct record if it doesn't exist
+                    FinishedProduct::create([
+                        'product_id' => $item->product_id,
+                        'quantity' => $item->quantity,
+                        'created_by' => auth()->id()
+                    ]);
+                }
+
+                // Restore remark product quantity if applicable
+                if (!empty($item->remark)) {
+                    $remarkProduct = Product::where('name', $item->remark)->first();
+
+                    if ($remarkProduct) {
+                        $remarkFinishedProduct = FinishedProduct::where('product_id', $remarkProduct->id)->first();
+
+                        if ($remarkFinishedProduct) {
+                            $remarkFinishedProduct->quantity += $item->quantity;
+                            $remarkFinishedProduct->save();
+                        } else {
+                            // Create new FinishedProduct record for remark product if it doesn't exist
+                            FinishedProduct::create([
+                                'product_id' => $remarkProduct->id,
+                                'quantity' => $item->quantity,
+                                'created_by' => auth()->id()
+                            ]);
+                        }
+                    }
+                }
+            }
+
+            // Delete all associated invoice items
+            $invoice->items()->delete();
+
+            // Delete the invoice
+            $invoice->delete();
+
+            // Return a success response
+            return response()->json(['success' => 'Invoice and its items deleted successfully!'], 200);
+        } catch (\Exception $e) {
+            // If there is an exception (e.g., invoice not found), return an error response
+            return response()->json(['error' => 'Failed to delete the invoice: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function downloadPDF($id)
+    {
+        $settings = Setting::first();
+
+        // Get logo path and convert to base64
+        $logoPath = public_path($settings->logo ?? 'assets/flowmax.png');
+        $logoType = pathinfo($logoPath, PATHINFO_EXTENSION);
+        $logoData = file_get_contents($logoPath);
+        $logoBase64 = 'data:image/' . $logoType . ';base64,' . base64_encode($logoData);
+
+        // Get authorized signatory path and convert to base64
+        $signaturePath = public_path($settings->authorized_signatory ?? 'assets/default_signature.png');
+        $signatureType = pathinfo($signaturePath, PATHINFO_EXTENSION);
+        $signatureData = file_get_contents($signaturePath);
+        $signatureBase64 = 'data:image/' . $signatureType . ';base64,' . base64_encode($signatureData);
+
+
+        // Fetch invoice data with related customer and items
+        $invoice = Invoice::with('items', 'customer')->findOrFail($id);
+        $pdf = Pdf::loadView('sales.invoice_pdf', [
+            'invoice' => $invoice,
+            'logoBase64' => $logoBase64,
+            'signatureBase64' => $signatureBase64,
+            'settings' => $settings
+        ]);
+        // print_r($pdf);exit(); 
+        // Return the generated PDF
+        
+        return $pdf->download(str_replace('/', '-', $invoice->invoice) . '.pdf');
+    }
+
+    public function getClientDetails($id)
+    {
+        // Fetch client details from the database
+        $client = StakeHolder::find($id);
+
+        if ($client) {
+            // Return the client details as JSON
+            return response()->json([
+                'success' => true,
+                'address' => $client->address,  // Assuming your Client model has an 'address' field
+            ]);
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Client not found',
+        ]);
+    }
+
+    /**
+     * Add received amount to an invoice
+     */
+    public function receiveAmount(Request $request, $id)
+    {
+        if (!PermissionHelper::hasPermission('sales', 'update')) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized action.'], 403);
+        }
+
+        $request->validate([
+            'amount' => 'required|numeric|min:0.01',
+        ]);
+
+        try {
+            $invoice = Invoice::findOrFail($id);
+            $newReceivedAmount = $request->input('amount');
+            $currentReceived = $invoice->received_amount ?? 0;
+            $totalReceived = $currentReceived + $newReceivedAmount;
+            $pendingAmount = $invoice->sub_total - $totalReceived;
+
+            // Validate that received amount doesn't exceed pending amount
+            if ($newReceivedAmount > ($invoice->sub_total - $currentReceived)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Received amount cannot exceed pending amount.'
+                ], 422);
+            }
+
+            $invoice->received_amount = $totalReceived;
+            $invoice->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Amount received successfully.',
+                'data' => [
+                    'total_amount' => $invoice->sub_total,
+                    'received_amount' => $totalReceived,
+                    'pending_amount' => $pendingAmount,
+                    'is_fully_paid' => $pendingAmount <= 0
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to receive amount: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Display pending sales report page
+     */
+    public function pending()
+    {
+        if (!PermissionHelper::hasPermission('sales', 'read')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        $clients = StakeHolder::orderBy('name', 'asc')->get();
+        return view('sales.pending', compact('clients'));
+    }
+
+    /**
+     * Get pending sales data for DataTable
+     */
+    public function getPendingData(Request $request)
+    {
+        $query = Invoice::query()
+            ->with('customer')
+            ->whereRaw('sub_total > COALESCE(received_amount, 0)');
+
+        // Filter by client
+        if ($request->filled('client_id')) {
+            $query->where('customer_id', $request->client_id);
+        }
+
+        // Filter by date range
+        if ($request->filled('date_from')) {
+            $query->where('create_date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->where('create_date', '<=', $request->date_to);
+        }
+
+        // Apply search
+        if ($request->has('search') && is_array($request->input('search'))) {
+            $search = $request->input('search')['value'];
+            if (!empty($search)) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('invoice', 'like', "%{$search}%")
+                        ->orWhereHas('customer', function ($q) use ($search) {
+                            $q->where('name', 'like', "%{$search}%")
+                              ->orWhere('business_name', 'like', "%{$search}%");
+                        })
+                        ->orWhere('create_date', 'like', "%{$search}%");
+                });
+            }
+        }
+
+        // Apply sorting
+        $column = $request->input('order.0.column');
+        $direction = $request->input('order.0.dir', 'desc');
+        $columns = ['id', 'create_date', 'invoice', 'customer_name', 'sub_total', 'received_amount'];
+        if (isset($columns[$column])) {
+            if ($columns[$column] === 'customer_name') {
+                $query->join('stake_holders', 'invoices.customer_id', '=', 'stake_holders.id')
+                      ->orderBy('stake_holders.name', $direction)
+                      ->select('invoices.*');
+            } else {
+                $query->orderBy($columns[$column], $direction);
+            }
+        } else {
+            $query->orderBy('create_date', 'desc');
+        }
+
+        $totalRecords = Invoice::whereRaw('sub_total > COALESCE(received_amount, 0)')->count();
+        
+        // Clone query for filtered count before pagination
+        $filteredQuery = clone $query;
+        $filteredRecords = $filteredQuery->count();
+
+        // Pagination
+        $length = $request->input('length', 25);
+        $start = $request->input('start', 0);
+        $data = $query->skip($start)->take($length)->get();
+
+        // Format data for DataTables
+        $formattedData = $data->map(function ($invoice, $index) use ($start) {
+            $receivedAmount = $invoice->received_amount ?? 0;
+            $pendingAmount = $invoice->sub_total - $receivedAmount;
+            
+            // Calculate days overdue from create_date
+            $createDate = \Carbon\Carbon::parse($invoice->create_date);
+            $today = \Carbon\Carbon::now();
+            $daysOverdue = (int) $createDate->diffInDays($today);
+            
+            // Determine overdue badge color
+            $overdueClass = 'badge-secondary';
+            if ($daysOverdue > 90) {
+                $overdueClass = 'badge-danger';
+            } elseif ($daysOverdue > 60) {
+                $overdueClass = 'badge-warning';
+            } elseif ($daysOverdue > 30) {
+                $overdueClass = 'badge-info';
+            }
+
+            $receiveButton = '<button type="button" class="btn btn-info btn-sm btn-receive-amount" 
+                data-id="' . $invoice->id . '" 
+                data-invoice="' . $invoice->invoice . '" 
+                data-total="' . $invoice->sub_total . '" 
+                data-received="' . $receivedAmount . '" 
+                data-pending="' . $pendingAmount . '">
+                <i class="fas fa-hand-holding-usd"></i> Receive
+            </button>';
+
+            return [
+                'sl_no' => $start + $index + 1,
+                'create_date' => $invoice->create_date,
+                'invoice' => $invoice->invoice,
+                'customer_name' => $invoice->customer ? $invoice->customer->name : 'N/A',
+                'total_amount' => '₹' . number_format($invoice->sub_total, 2),
+                'received_amount' => '₹' . number_format($receivedAmount, 2),
+                'pending_amount' => '<span class="text-danger font-weight-bold">₹' . number_format($pendingAmount, 2) . '</span>',
+                'days_overdue' => '<span class="badge ' . $overdueClass . '">' . $daysOverdue . ' days</span>',
+                'action' => $receiveButton,
+            ];
+        });
+
+        return response()->json([
+            'draw' => intval($request->input('draw')),
+            'recordsTotal' => $totalRecords,
+            'recordsFiltered' => $filteredRecords,
+            'data' => $formattedData
+        ]);
+    }
+
+    /**
+     * Get pending sales summary for dashboard cards
+     */
+    public function getPendingSummary(Request $request)
+    {
+        $query = Invoice::query()
+            ->whereRaw('sub_total > COALESCE(received_amount, 0)');
+
+        // Filter by client
+        if ($request->filled('client_id')) {
+            $query->where('customer_id', $request->client_id);
+        }
+
+        // Filter by date range
+        if ($request->filled('date_from')) {
+            $query->where('create_date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->where('create_date', '<=', $request->date_to);
+        }
+
+        $totalInvoices = $query->count();
+        $totalAmount = $query->sum('sub_total');
+        $totalReceived = $query->sum('received_amount') ?? 0;
+        $totalPending = $totalAmount - $totalReceived;
+
+        return response()->json([
+            'total_invoices' => $totalInvoices,
+            'total_amount' => $totalAmount,
+            'total_received' => $totalReceived,
+            'total_pending' => $totalPending
+        ]);
+    }
+
+    /**
+     * Export pending sales data
+     */
+    public function exportPending(Request $request)
+    {
+        $query = Invoice::query()
+            ->with('customer')
+            ->whereRaw('sub_total > COALESCE(received_amount, 0)');
+
+        // Filter by client
+        if ($request->filled('client_id')) {
+            $query->where('customer_id', $request->client_id);
+        }
+
+        // Filter by date range
+        if ($request->filled('date_from')) {
+            $query->where('create_date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->where('create_date', '<=', $request->date_to);
+        }
+
+        $invoices = $query->orderBy('create_date', 'desc')->get();
+
+        // Calculate totals
+        $totalAmount = $invoices->sum('sub_total');
+        $totalReceived = $invoices->sum('received_amount') ?? 0;
+        $totalPending = $totalAmount - $totalReceived;
+
+        if ($request->export === 'pdf') {
+            $pdf = Pdf::loadView('sales.pending_pdf', [
+                'invoices' => $invoices,
+                'totalAmount' => $totalAmount,
+                'totalReceived' => $totalReceived,
+                'totalPending' => $totalPending,
+                'filterClient' => $request->client_id ? StakeHolder::find($request->client_id) : null,
+                'dateFrom' => $request->date_from,
+                'dateTo' => $request->date_to
+            ]);
+            return $pdf->download('pending_sales_report_' . date('Y-m-d') . '.pdf');
+        }
+
+        // Excel export (CSV format)
+        $filename = 'pending_sales_report_' . date('Y-m-d') . '.csv';
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => "attachment; filename=\"$filename\"",
+        ];
+
+        $callback = function() use ($invoices, $totalAmount, $totalReceived, $totalPending) {
+            $file = fopen('php://output', 'w');
+            
+            // Header row
+            fputcsv($file, ['SL No', 'Invoice Date', 'Invoice Number', 'Client Name', 'Total Amount', 'Received Amount', 'Pending Amount']);
+            
+            // Data rows
+            foreach ($invoices as $index => $invoice) {
+                $receivedAmount = $invoice->received_amount ?? 0;
+                $pendingAmount = $invoice->sub_total - $receivedAmount;
+                
+                fputcsv($file, [
+                    $index + 1,
+                    $invoice->create_date,
+                    $invoice->invoice,
+                    $invoice->customer ? $invoice->customer->name : 'N/A',
+                    $invoice->sub_total,
+                    $receivedAmount,
+                    $pendingAmount
+                ]);
+            }
+            
+            // Total row
+            fputcsv($file, []);
+            fputcsv($file, ['', '', '', 'Grand Total:', $totalAmount, $totalReceived, $totalPending]);
+            
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+}

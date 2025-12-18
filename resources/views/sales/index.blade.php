@@ -1,0 +1,251 @@
+@extends('layouts.app')
+
+@section('content')
+    <div class="content-wrapper">
+        <div class="content-header">
+            <div class="container-fluid">
+                <div class="row mb-2">
+                    <div class="col-sm-6">
+                        <h1 class="m-0">
+                            <a href="{{ route('sales.create') }}">
+                                <button type="button" class="btn btn-success">
+                                    Add Sales
+                                </button>
+                            </a>
+                            <a href="{{ route('sales.pending') }}">
+                                <button type="button" class="btn btn-warning ml-2">
+                                    <i class="fas fa-file-invoice-dollar"></i> Pending Report
+                                </button>
+                            </a>
+                        </h1>
+                    </div>
+                    <div class="col-sm-6">
+                        <ol class="breadcrumb float-sm-right">
+                            <li class="breadcrumb-item"><a href="{{ route('dashboard') }}">Home</a></li>
+                            <li class="breadcrumb-item active">Sales</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <section class="content">
+            <div class="container-fluid">
+                <div class="row">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="card-title">Sales</h3>
+                            </div>
+                            <div class="card-body">
+                                <table id="sales-table" class="display">
+                                    <thead>
+                                        <th>SL No.</th>
+                                        <th>Create Date</th>
+                                        <th>Invoice Number</th>
+                                        <th>Client Name</th>
+                                        <th>Amount</th>
+                                        <th>Received Amount</th>
+                                        <th>Pending Amount</th>
+                                        <th>Total Items</th>
+                                        <th>Action</th>
+                                    </thead>
+                                    <tfoot>
+                                        <th>SL No.</th>
+                                        <th>Create Date</th>
+                                        <th>Invoice Number</th>
+                                        <th>Client Name</th>
+                                        <th>Amount</th>
+                                        <th>Received Amount</th>
+                                        <th>Pending Amount</th>
+                                        <th>Total Items</th>
+                                        <th>Action</th>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Receive Amount Modal -->
+        <div class="modal fade" id="receiveAmountModal" tabindex="-1" role="dialog" aria-labelledby="receiveAmountModalLabel" aria-hidden="true">
+            <div class="modal-dialog" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="receiveAmountModalLabel">Receive Amount</h5>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="receiveAmountForm">
+                            <input type="hidden" id="invoice_id" name="invoice_id">
+                            
+                            <div class="form-group">
+                                <label>Invoice Number</label>
+                                <input type="text" class="form-control" id="modal_invoice_number" readonly>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Total Amount</label>
+                                <input type="text" class="form-control" id="modal_total_amount" readonly>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Already Received</label>
+                                <input type="text" class="form-control" id="modal_received_amount" readonly>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Pending Amount</label>
+                                <input type="text" class="form-control" id="modal_pending_amount" readonly>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="receive_amount">Amount to Receive <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" id="receive_amount" name="amount" step="0.01" min="0.01" required>
+                                <small class="text-muted">Enter the amount you want to receive</small>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-primary" id="submitReceiveAmount">Receive Amount</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            $(document).ready(function() {
+                $('#sales-table').DataTable({
+                    processing: true,
+                    serverSide: true,
+                    ajax: '{{ route('sales.data') }}',
+                    columns: [
+                        { data: 'id', name: 'id' },
+                        { data: 'create_date', name: 'create_date' },
+                        { data: 'invoice', name: 'invoice' },
+                        { data: 'customer_name', name: 'customer_name' },
+                        { data: 'amount', name: 'amount' },
+                        { data: 'received_amount', name: 'received_amount' },
+                        { data: 'pending_amount', name: 'pending_amount' },
+                        { data: 'total_item', name: 'total_item' },
+                        { data: 'action', name: 'action', orderable: false, searchable: false }
+                    ],
+                    paging: true,
+                    lengthChange: true,
+                    pageLength: 10, 
+                    searching: true,
+                    ordering: true,
+                    info: true,
+                    autoWidth: false,
+                });
+            });
+
+            // Handle delete button click
+            $(document).on('click', '.btn-delete', function(e) {
+                e.preventDefault();
+
+                if (!confirm('Are you sure you want to delete this invoice?')) {
+                    return;
+                }
+
+                var form = $(this).closest('form');
+                var url = form.attr('action');
+
+                $.ajax({
+                    url: url,
+                    method: 'DELETE',
+                    data: {
+                        _token: '{{ csrf_token() }}'
+                    },
+                    success: function(data) {
+                        alert(data.success || 'Invoice deleted successfully.');
+                        $('#sales-table').DataTable().ajax.reload();
+                    },
+                    error: function(xhr, status, error) {
+                        console.error('Error deleting item:', error);
+                    }
+                });
+            });
+
+            // Handle receive amount button click - open modal
+            $(document).on('click', '.btn-receive-amount', function() {
+                var invoiceId = $(this).data('id');
+                var invoiceNumber = $(this).data('invoice');
+                var totalAmount = $(this).data('total');
+                var receivedAmount = $(this).data('received');
+                var pendingAmount = $(this).data('pending');
+
+                // Populate modal fields
+                $('#invoice_id').val(invoiceId);
+                $('#modal_invoice_number').val(invoiceNumber);
+                $('#modal_total_amount').val(parseFloat(totalAmount).toFixed(2));
+                $('#modal_received_amount').val(parseFloat(receivedAmount).toFixed(2));
+                $('#modal_pending_amount').val(parseFloat(pendingAmount).toFixed(2));
+                $('#receive_amount').val('');
+                $('#receive_amount').attr('max', pendingAmount);
+
+                // Show modal
+                $('#receiveAmountModal').modal('show');
+            });
+
+            // Handle submit receive amount
+            $('#submitReceiveAmount').on('click', function() {
+                var invoiceId = $('#invoice_id').val();
+                var amount = $('#receive_amount').val();
+                var pendingAmount = parseFloat($('#modal_pending_amount').val());
+
+                // Validate amount
+                if (!amount || parseFloat(amount) <= 0) {
+                    alert('Please enter a valid amount.');
+                    return;
+                }
+
+                if (parseFloat(amount) > pendingAmount) {
+                    alert('Amount cannot exceed pending amount of ' + pendingAmount.toFixed(2));
+                    return;
+                }
+
+                // Disable button to prevent double submission
+                $(this).prop('disabled', true).text('Processing...');
+
+                $.ajax({
+                    url: '/sales/' + invoiceId + '/receive-amount',
+                    method: 'POST',
+                    data: {
+                        _token: '{{ csrf_token() }}',
+                        amount: amount
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            alert(response.message);
+                            $('#receiveAmountModal').modal('hide');
+                            $('#sales-table').DataTable().ajax.reload();
+                        } else {
+                            alert(response.message || 'Failed to receive amount.');
+                        }
+                    },
+                    error: function(xhr) {
+                        var message = 'An error occurred.';
+                        if (xhr.responseJSON && xhr.responseJSON.message) {
+                            message = xhr.responseJSON.message;
+                        }
+                        alert(message);
+                    },
+                    complete: function() {
+                        $('#submitReceiveAmount').prop('disabled', false).text('Receive Amount');
+                    }
+                });
+            });
+
+            // Reset form when modal is closed
+            $('#receiveAmountModal').on('hidden.bs.modal', function() {
+                $('#receiveAmountForm')[0].reset();
+            });
+        </script>
+    </div>
+@endsection

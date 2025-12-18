@@ -1,0 +1,18 @@
+
+
+# Deny access to .env file
+<Files .env>
+    Order allow,deny
+    Deny from all
+</Files>
+
+# Deny access to other sensitive files
+<FilesMatch "(artisan|composer\.(json|lock)|phpunit\.xml|server\.php|.*\.md|.*\.yml|.*\.yaml)">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
