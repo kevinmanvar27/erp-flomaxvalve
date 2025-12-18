@@ -19,6 +19,65 @@ use Carbon\Carbon;
 class SalesController extends Controller
 {
     /**
+     * Helper function to get total available quantity for a product
+     * Sums quantity from all FinishedProduct records for the given product_id
+     */
+    private function getTotalAvailableQuantity($productId)
+    {
+        return FinishedProduct::where('product_id', $productId)->sum('quantity');
+    }
+
+    /**
+     * Helper function to deduct quantity from FinishedProduct using FIFO method
+     * Deducts from oldest records first (First In First Out)
+     */
+    private function deductQuantityFIFO($productId, $quantityToDeduct)
+    {
+        $remainingToDeduct = $quantityToDeduct;
+
+        // Get all finished products for this product_id ordered by created_at (FIFO)
+        $finishedProducts = FinishedProduct::where('product_id', $productId)
+            ->where('quantity', '>', 0)
+            ->orderBy('created_at', 'asc')
+            ->get();
+
+        foreach ($finishedProducts as $fp) {
+            if ($remainingToDeduct <= 0) break;
+
+            $deductAmount = min($fp->quantity, $remainingToDeduct);
+            $fp->quantity -= $deductAmount;
+            $fp->save();
+            $remainingToDeduct -= $deductAmount;
+        }
+
+        return $remainingToDeduct <= 0; // Returns true if fully deducted
+    }
+
+    /**
+     * Helper function to restore quantity to FinishedProduct
+     * Adds quantity back to the most recent record or creates new one
+     */
+    private function restoreQuantity($productId, $quantityToRestore)
+    {
+        // Try to find an existing record to add quantity back (most recent one)
+        $finishedProduct = FinishedProduct::where('product_id', $productId)
+            ->orderBy('created_at', 'desc')
+            ->first();
+
+        if ($finishedProduct) {
+            $finishedProduct->quantity += $quantityToRestore;
+            $finishedProduct->save();
+        } else {
+            // Create new FinishedProduct record if none exists
+            FinishedProduct::create([
+                'product_id' => $productId,
+                'quantity' => $quantityToRestore,
+                'created_by' => auth()->id()
+            ]);
+        }
+    }
+
+    /**
      * Display a listing of the resource.
      */
     public function index(Request $request)
@@ -251,34 +310,45 @@ class SalesController extends Controller
             $remarks = $request->input('remark');
             $errors = [];
 
+            // Build a map to track total requested quantity per product (including duplicates in same invoice)
+            $productQuantityMap = [];
+            
             // Check finished products for sufficient quantity (for main products)
             foreach ($items as $index => $item) {
-                $finishedProduct = FinishedProduct::where('product_id', $item)->first();
                 $requestedQuantity = $quantities[$index];
-
-                if (!$finishedProduct || $finishedProduct->quantity < $requestedQuantity) {
-                    $product = Product::find($item);
-                    $errors[] = 'Insufficient quantity for product: ' . $product->name;
+                
+                // Accumulate quantity for same product
+                if (!isset($productQuantityMap[$item])) {
+                    $productQuantityMap[$item] = 0;
                 }
+                $productQuantityMap[$item] += $requestedQuantity;
             }
 
             // Check finished products for sufficient quantity (for remark products)
             foreach ($remarks as $index => $remarkValue) {
-                // Skip if remark is empty or not a product
                 if (empty($remarkValue)) {
                     continue;
                 }
 
-                // Find the product ID from the product name in remark
                 $remarkProduct = Product::where('name', $remarkValue)->first();
-
                 if ($remarkProduct) {
-                    $finishedProduct = FinishedProduct::where('product_id', $remarkProduct->id)->first();
-                    $requestedQuantity = $quantities[$index]; // Use the same quantity as the main product
-
-                    if (!$finishedProduct || $finishedProduct->quantity < $requestedQuantity) {
-                        $errors[] = 'Insufficient quantity for remark product: ' . $remarkProduct->name;
+                    $requestedQuantity = $quantities[$index];
+                    
+                    if (!isset($productQuantityMap[$remarkProduct->id])) {
+                        $productQuantityMap[$remarkProduct->id] = 0;
                     }
+                    $productQuantityMap[$remarkProduct->id] += $requestedQuantity;
+                }
+            }
+
+            // Validate total available quantity for each product (using SUM of all records from all users)
+            foreach ($productQuantityMap as $productId => $totalRequested) {
+                $totalAvailable = $this->getTotalAvailableQuantity($productId);
+                
+                if ($totalAvailable < $totalRequested) {
+                    $product = Product::find($productId);
+                    $errors[] = 'Insufficient quantity for product: ' . $product->name . 
+                                ' (Available: ' . $totalAvailable . ', Requested: ' . $totalRequested . ')';
                 }
             }
 
@@ -316,14 +386,10 @@ class SalesController extends Controller
             $amounts = $request->input('amount');
 
             foreach ($items as $index => $item) {
-                // Deduct the main product quantity
-                $finishedProduct = FinishedProduct::where('product_id', $item)->first();
                 $requestedQuantity = $quantities[$index];
 
-                if ($finishedProduct) {
-                    $finishedProduct->quantity -= $requestedQuantity;
-                    $finishedProduct->save();
-                }
+                // Deduct the main product quantity using FIFO method (oldest stock first)
+                $this->deductQuantityFIFO($item, $requestedQuantity);
 
                 // Create the invoice item
                 InvoiceItem::create([
@@ -335,17 +401,12 @@ class SalesController extends Controller
                     'amount' => $amounts[$index],
                 ]);
 
-                // If a product is selected in the remark dropdown, deduct its quantity as well
+                // If a product is selected in the remark dropdown, deduct its quantity as well using FIFO
                 if (!empty($remarks[$index])) {
                     $remarkProduct = Product::where('name', $remarks[$index])->first();
 
                     if ($remarkProduct) {
-                        $remarkFinishedProduct = FinishedProduct::where('product_id', $remarkProduct->id)->first();
-
-                        if ($remarkFinishedProduct) {
-                            $remarkFinishedProduct->quantity -= $requestedQuantity;
-                            $remarkFinishedProduct->save();
-                        }
+                        $this->deductQuantityFIFO($remarkProduct->id, $requestedQuantity);
                     }
                 }
             }
@@ -437,23 +498,15 @@ class SalesController extends Controller
 
         // First restore all quantities back to FinishedProduct for main products
         foreach ($existingItems as $existingItem) {
-            $finishedProduct = FinishedProduct::where('product_id', $existingItem->product_id)->first();
-            if ($finishedProduct) {
-                $finishedProduct->quantity += $existingItem->quantity; // Restore old quantity
-                $finishedProduct->save();
-            }
+            // Restore main product quantity
+            $this->restoreQuantity($existingItem->product_id, $existingItem->quantity);
 
             // Also restore quantities for products that were used in remarks
             if (!empty($existingItem->remark)) {
                 $remarkProduct = Product::where('name', $existingItem->remark)->first();
 
                 if ($remarkProduct) {
-                    $remarkFinishedProduct = FinishedProduct::where('product_id', $remarkProduct->id)->first();
-
-                    if ($remarkFinishedProduct) {
-                        $remarkFinishedProduct->quantity += $existingItem->quantity; // Restore old quantity
-                        $remarkFinishedProduct->save();
-                    }
+                    $this->restoreQuantity($remarkProduct->id, $existingItem->quantity);
                 }
             }
         }
@@ -467,58 +520,59 @@ class SalesController extends Controller
 
         $errors = [];
 
+        // Build a map to track total requested quantity per product
+        $productQuantityMap = [];
+
         // Check for sufficient quantity with new quantities (for main products)
         foreach ($items as $index => $itemId) {
-            $finishedProduct = FinishedProduct::where('product_id', $itemId)->first();
             $requestedQuantity = $quantities[$index];
-
-            if (!$finishedProduct || $finishedProduct->quantity < $requestedQuantity) {
-                $product = Product::find($itemId);
-                $errors[] = 'Insufficient quantity for product: ' . $product->name;
+            
+            if (!isset($productQuantityMap[$itemId])) {
+                $productQuantityMap[$itemId] = 0;
             }
+            $productQuantityMap[$itemId] += $requestedQuantity;
         }
 
         // Check for sufficient quantity (for remark products)
         foreach ($remarks as $index => $remarkValue) {
-            // Skip if remark is empty or not a product
             if (empty($remarkValue)) {
                 continue;
             }
 
-            // Find the product ID from the product name in remark
             $remarkProduct = Product::where('name', $remarkValue)->first();
-
             if ($remarkProduct) {
-                $finishedProduct = FinishedProduct::where('product_id', $remarkProduct->id)->first();
-                $requestedQuantity = $quantities[$index]; // Use the same quantity as the main product
-
-                if (!$finishedProduct || $finishedProduct->quantity < $requestedQuantity) {
-                    $errors[] = 'Insufficient quantity for remark product: ' . $remarkProduct->name;
+                $requestedQuantity = $quantities[$index];
+                
+                if (!isset($productQuantityMap[$remarkProduct->id])) {
+                    $productQuantityMap[$remarkProduct->id] = 0;
                 }
+                $productQuantityMap[$remarkProduct->id] += $requestedQuantity;
+            }
+        }
+
+        // Validate total available quantity for each product (using SUM of all records from all users)
+        foreach ($productQuantityMap as $productId => $totalRequested) {
+            $totalAvailable = $this->getTotalAvailableQuantity($productId);
+            
+            if ($totalAvailable < $totalRequested) {
+                $product = Product::find($productId);
+                $errors[] = 'Insufficient quantity for product: ' . $product->name . 
+                            ' (Available: ' . $totalAvailable . ', Requested: ' . $totalRequested . ')';
             }
         }
 
         if (!empty($errors)) {
-            // If there are errors, restore the original deductions
+            // If there are errors, restore the original deductions (re-deduct what we restored)
             foreach ($existingItems as $existingItem) {
-                // Restore main product quantities
-                $finishedProduct = FinishedProduct::where('product_id', $existingItem->product_id)->first();
-                if ($finishedProduct) {
-                    $finishedProduct->quantity -= $existingItem->quantity; // Reapply the original deduction
-                    $finishedProduct->save();
-                }
+                // Re-deduct main product quantities
+                $this->deductQuantityFIFO($existingItem->product_id, $existingItem->quantity);
 
-                // Restore remark product quantities
+                // Re-deduct remark product quantities
                 if (!empty($existingItem->remark)) {
                     $remarkProduct = Product::where('name', $existingItem->remark)->first();
 
                     if ($remarkProduct) {
-                        $remarkFinishedProduct = FinishedProduct::where('product_id', $remarkProduct->id)->first();
-
-                        if ($remarkFinishedProduct) {
-                            $remarkFinishedProduct->quantity -= $existingItem->quantity; // Reapply the original deduction
-                            $remarkFinishedProduct->save();
-                        }
+                        $this->deductQuantityFIFO($remarkProduct->id, $existingItem->quantity);
                     }
                 }
             }
@@ -553,16 +607,12 @@ class SalesController extends Controller
         // Delete all existing items
         $invoice->items()->delete();
 
-        // Create new items and deduct new quantities
+        // Create new items and deduct new quantities using FIFO
         foreach ($items as $index => $itemId) {
             $requestedQuantity = $quantities[$index];
 
-            // Deduct new quantity from FinishedProduct for main product
-            $finishedProduct = FinishedProduct::where('product_id', $itemId)->first();
-            if ($finishedProduct) {
-                $finishedProduct->quantity -= $requestedQuantity;
-                $finishedProduct->save();
-            }
+            // Deduct new quantity from FinishedProduct using FIFO method (oldest stock first)
+            $this->deductQuantityFIFO($itemId, $requestedQuantity);
 
             // Create new invoice item
             InvoiceItem::create([
@@ -574,17 +624,12 @@ class SalesController extends Controller
                 'remark' => isset($remarks[$index]) ? $remarks[$index] : null,
             ]);
 
-            // If a product is selected in the remark dropdown, deduct its quantity as well
+            // If a product is selected in the remark dropdown, deduct its quantity as well using FIFO
             if (!empty($remarks[$index])) {
                 $remarkProduct = Product::where('name', $remarks[$index])->first();
 
                 if ($remarkProduct) {
-                    $remarkFinishedProduct = FinishedProduct::where('product_id', $remarkProduct->id)->first();
-
-                    if ($remarkFinishedProduct) {
-                        $remarkFinishedProduct->quantity -= $requestedQuantity;
-                        $remarkFinishedProduct->save();
-                    }
+                    $this->deductQuantityFIFO($remarkProduct->id, $requestedQuantity);
                 }
             }
         }
@@ -603,38 +648,15 @@ class SalesController extends Controller
 
             // Restore quantities to FinishedProduct table for main products
             foreach ($invoice->items as $item) {
-                // Restore main product quantity
-                $finishedProduct = FinishedProduct::where('product_id', $item->product_id)->first();
-                if ($finishedProduct) {
-                    $finishedProduct->quantity += $item->quantity;
-                    $finishedProduct->save();
-                } else {
-                    // Create new FinishedProduct record if it doesn't exist
-                    FinishedProduct::create([
-                        'product_id' => $item->product_id,
-                        'quantity' => $item->quantity,
-                        'created_by' => auth()->id()
-                    ]);
-                }
+                // Restore main product quantity using helper method
+                $this->restoreQuantity($item->product_id, $item->quantity);
 
                 // Restore remark product quantity if applicable
                 if (!empty($item->remark)) {
                     $remarkProduct = Product::where('name', $item->remark)->first();
 
                     if ($remarkProduct) {
-                        $remarkFinishedProduct = FinishedProduct::where('product_id', $remarkProduct->id)->first();
-
-                        if ($remarkFinishedProduct) {
-                            $remarkFinishedProduct->quantity += $item->quantity;
-                            $remarkFinishedProduct->save();
-                        } else {
-                            // Create new FinishedProduct record for remark product if it doesn't exist
-                            FinishedProduct::create([
-                                'product_id' => $remarkProduct->id,
-                                'quantity' => $item->quantity,
-                                'created_by' => auth()->id()
-                            ]);
-                        }
+                        $this->restoreQuantity($remarkProduct->id, $item->quantity);
                     }
                 }
             }
