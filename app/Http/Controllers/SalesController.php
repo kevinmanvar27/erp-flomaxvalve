@@ -740,27 +740,43 @@ class SalesController extends Controller
 
         try {
             $invoice = Invoice::findOrFail($id);
-            $newReceivedAmount = $request->input('amount');
-            $currentReceived = $invoice->received_amount ?? 0;
-            $totalReceived = $currentReceived + $newReceivedAmount;
-            $pendingAmount = $invoice->sub_total - $totalReceived;
-
-            // Validate that received amount doesn't exceed pending amount
-            if ($newReceivedAmount > ($invoice->sub_total - $currentReceived)) {
+            $newReceivedAmount = floatval($request->input('amount'));
+            $currentReceived = floatval($invoice->received_amount ?? 0);
+            
+            // Use balance (includes GST) as the total amount for consistency
+            $totalAmount = floatval($invoice->balance);
+            $currentPendingAmount = $totalAmount - $currentReceived;
+            
+            // Add small tolerance (0.01) for floating-point comparison to handle precision issues
+            if ($newReceivedAmount > ($currentPendingAmount + 0.01)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Received amount cannot exceed pending amount.'
                 ], 422);
             }
+            
+            // If the amount is very close to pending (within tolerance), set it to exact pending to avoid tiny remainders
+            if (abs($newReceivedAmount - $currentPendingAmount) < 0.01) {
+                $newReceivedAmount = $currentPendingAmount;
+            }
+            
+            $totalReceived = $currentReceived + $newReceivedAmount;
+            $pendingAmount = $totalAmount - $totalReceived;
+            
+            // Ensure pending amount doesn't go negative due to floating-point issues
+            if ($pendingAmount < 0.01) {
+                $pendingAmount = 0;
+                $totalReceived = $totalAmount;
+            }
 
-            $invoice->received_amount = $totalReceived;
+            $invoice->received_amount = round($totalReceived, 2);
             $invoice->save();
 
             return response()->json([
                 'success' => true,
                 'message' => 'Amount received successfully.',
                 'data' => [
-                    'total_amount' => $invoice->sub_total,
+                    'total_amount' => $totalAmount,
                     'received_amount' => $totalReceived,
                     'pending_amount' => $pendingAmount,
                     'is_fully_paid' => $pendingAmount <= 0
@@ -996,12 +1012,14 @@ class SalesController extends Controller
             $file = fopen('php://output', 'w');
             
             // Header row
-            fputcsv($file, ['SL No', 'Invoice Date', 'Invoice Number', 'Client Name', 'Total Amount', 'Received Amount', 'Pending Amount']);
+            fputcsv($file, ['SL No', 'Invoice Date', 'Invoice Number', 'Client Name', 'Total Amount', 'Received Amount', 'Pending Amount', 'Days Overdue']);
             
             // Data rows
             foreach ($invoices as $index => $invoice) {
                 $receivedAmount = $invoice->received_amount ?? 0;
                 $pendingAmount = $invoice->balance - $receivedAmount;
+                $invoiceDate = \Carbon\Carbon::parse($invoice->create_date);
+                $daysOverdue = (int) $invoiceDate->diffInDays(now(), false);
                 
                 fputcsv($file, [
                     $index + 1,
@@ -1010,13 +1028,14 @@ class SalesController extends Controller
                     $invoice->customer ? $invoice->customer->name : 'N/A',
                     $invoice->balance,
                     $receivedAmount,
-                    $pendingAmount
+                    $pendingAmount,
+                    $daysOverdue
                 ]);
             }
             
             // Total row
             fputcsv($file, []);
-            fputcsv($file, ['', '', '', 'Grand Total:', $totalAmount, $totalReceived, $totalPending]);
+            fputcsv($file, ['', '', '', 'Grand Total:', $totalAmount, $totalReceived, $totalPending, '']);
             
             fclose($file);
         };

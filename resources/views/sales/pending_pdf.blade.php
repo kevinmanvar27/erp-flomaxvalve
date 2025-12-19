@@ -152,12 +152,13 @@
         <thead>
             <tr>
                 <th class="text-center" style="width: 5%;">SL</th>
-                <th style="width: 12%;">Invoice Date</th>
-                <th style="width: 15%;">Invoice No.</th>
-                <th style="width: 20%;">Client Name</th>
-                <th class="text-right" style="width: 14%;">Total Amount</th>
-                <th class="text-right" style="width: 14%;">Received</th>
-                <th class="text-right" style="width: 14%;">Pending</th>
+                <th style="width: 10%;">Invoice Date</th>
+                <th style="width: 13%;">Invoice No.</th>
+                <th style="width: 18%;">Client Name</th>
+                <th class="text-right" style="width: 13%;">Total Amount</th>
+                <th class="text-right" style="width: 13%;">Received</th>
+                <th class="text-right" style="width: 13%;">Pending</th>
+                <th class="text-center" style="width: 10%;">Days Overdue</th>
             </tr>
         </thead>
         <tbody>
@@ -165,6 +166,8 @@
                 @php
                     $receivedAmount = $invoice->received_amount ?? 0;
                     $pendingAmount = $invoice->balance - $receivedAmount;
+                    $invoiceDate = \Carbon\Carbon::parse($invoice->create_date);
+                    $daysOverdue = (int) $invoiceDate->diffInDays(now(), false);
                 @endphp
                 <tr>
                     <td class="text-center">{{ $index + 1 }}</td>
@@ -174,6 +177,7 @@
                     <td class="text-right">Rs. {{ number_format($invoice->balance, 2) }}</td>
                     <td class="text-right">Rs. {{ number_format($receivedAmount, 2) }}</td>
                     <td class="text-right pending-amount">Rs. {{ number_format($pendingAmount, 2) }}</td>
+                    <td class="text-center">{{ $daysOverdue }} days</td>
                 </tr>
             @endforeach
         </tbody>
@@ -183,6 +187,7 @@
                 <td class="text-right"><strong>Rs. {{ number_format($totalAmount, 2) }}</strong></td>
                 <td class="text-right"><strong>Rs. {{ number_format($totalReceived, 2) }}</strong></td>
                 <td class="text-right pending-amount"><strong>Rs. {{ number_format($totalPending, 2) }}</strong></td>
+                <td></td>
             </tr>
         </tfoot>
     </table>
