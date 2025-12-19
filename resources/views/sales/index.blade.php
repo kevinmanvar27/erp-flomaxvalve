@@ -211,7 +211,7 @@
                     lengthMenu: [[10, 25, 50, 100], [10, 25, 50, 100]],
                     searching: true,
                     ordering: true,
-                    order: [[1, 'desc']], // Default order by create_date descending
+                    order: [[2, 'desc']], // Default order by invoice number descending
                     info: true,
                     autoWidth: false,
                     responsive: true

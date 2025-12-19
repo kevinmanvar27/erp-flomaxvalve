@@ -107,13 +107,22 @@ class SalesController extends Controller
 
         // Apply sorting
         $column = $request->input('order.0.column');
-        $direction = $request->input('order.0.dir');
+        $direction = $request->input('order.0.dir', 'desc');
         $columns = ['id', 'create_date', 'invoice', 'customer.name', 'amount', 'received_amount', 'pending_amount', 'total_item'];
+        
+        // Validate direction to prevent SQL injection
+        $direction = strtolower($direction) === 'asc' ? 'asc' : 'desc';
+        
         if (isset($columns[$column])) {
-            $query->orderBy($columns[$column], $direction);
+            // Special handling for invoice column - sort by numeric part (e.g., 174 from FSVINV-174-12/25-26)
+            if ($columns[$column] === 'invoice') {
+                $query->orderByRaw("CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(invoice, '-', 2), '-', -1) AS UNSIGNED) {$direction}");
+            } else {
+                $query->orderBy($columns[$column], $direction);
+            }
         } else {
-            // Default sorting by id descending (newest first)
-            $query->orderBy('id', 'desc');
+            // Default sorting by invoice number (numeric part) descending
+            $query->orderByRaw("CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(invoice, '-', 2), '-', -1) AS UNSIGNED) DESC");
         }
 
         // Get total records count (before filtering)
