@@ -136,9 +136,9 @@ class SalesController extends Controller
                     ' . $actionButtons;
             }
 
-            // Calculate pending amount
+            // Calculate pending amount (using balance which includes GST)
             $receivedAmount = $invoice->received_amount ?? 0;
-            $pendingAmount = $invoice->sub_total - $receivedAmount;
+            $pendingAmount = $invoice->balance - $receivedAmount;
 
             // Add receive amount button only if there's pending amount
             $receiveButton = '';
@@ -146,7 +146,7 @@ class SalesController extends Controller
                 $receiveButton = '<button type="button" class="btn btn-info btn-sm btn-receive-amount" 
                     data-id="' . $invoice->id . '" 
                     data-invoice="' . $invoice->invoice . '" 
-                    data-total="' . $invoice->sub_total . '" 
+                    data-total="' . $invoice->balance . '" 
                     data-received="' . $receivedAmount . '" 
                     data-pending="' . $pendingAmount . '">
                     Receive Amount
@@ -158,7 +158,7 @@ class SalesController extends Controller
                 'create_date' => $invoice->create_date,
                 'invoice' => $invoice->invoice,
                 'customer_name' => $invoice->customer->name,
-                'amount' => number_format($invoice->sub_total, 2),
+                'amount' => number_format($invoice->balance, 2),
                 'received_amount' => number_format($receivedAmount, 2),
                 'pending_amount' => number_format($pendingAmount, 2),
                 'total_item' => $invoice->items->count(),
@@ -679,29 +679,29 @@ class SalesController extends Controller
     {
         $settings = Setting::first();
 
-        // Get logo path and convert to base64
-        $logoPath = public_path($settings->logo ?? 'assets/flowmax.png');
-        $logoType = pathinfo($logoPath, PATHINFO_EXTENSION);
-        $logoData = file_get_contents($logoPath);
-        $logoBase64 = 'data:image/' . $logoType . ';base64,' . base64_encode($logoData);
+        // Get logo path - use default flowmax.png if not set
+        $logoPath = public_path('assets/flowmax.png');
+        if (!empty($settings->logo) && file_exists(public_path(ltrim($settings->logo, '/')))) {
+            $logoPath = public_path(ltrim($settings->logo, '/'));
+        }
 
-        // Get authorized signatory path and convert to base64
-        $signaturePath = public_path($settings->authorized_signatory ?? 'assets/default_signature.png');
-        $signatureType = pathinfo($signaturePath, PATHINFO_EXTENSION);
-        $signatureData = file_get_contents($signaturePath);
-        $signatureBase64 = 'data:image/' . $signatureType . ';base64,' . base64_encode($signatureData);
-
+        // Get authorized signatory path
+        $signaturePath = '';
+        if (!empty($settings->authorized_signatory)) {
+            $tempPath = public_path(ltrim($settings->authorized_signatory, '/'));
+            if (file_exists($tempPath)) {
+                $signaturePath = $tempPath;
+            }
+        }
 
         // Fetch invoice data with related customer and items
         $invoice = Invoice::with('items', 'customer')->findOrFail($id);
         $pdf = Pdf::loadView('sales.invoice_pdf', [
             'invoice' => $invoice,
-            'logoBase64' => $logoBase64,
-            'signatureBase64' => $signatureBase64,
+            'logoPath' => $logoPath,
+            'signaturePath' => $signaturePath,
             'settings' => $settings
         ]);
-        // print_r($pdf);exit(); 
-        // Return the generated PDF
         
         return $pdf->download(str_replace('/', '-', $invoice->invoice) . '.pdf');
     }
@@ -794,7 +794,7 @@ class SalesController extends Controller
     {
         $query = Invoice::query()
             ->with('customer')
-            ->whereRaw('sub_total > COALESCE(received_amount, 0)');
+            ->whereRaw('balance > COALESCE(received_amount, 0)');
 
         // Filter by client
         if ($request->filled('client_id')) {
@@ -827,7 +827,7 @@ class SalesController extends Controller
         // Apply sorting
         $column = $request->input('order.0.column');
         $direction = $request->input('order.0.dir', 'desc');
-        $columns = ['id', 'create_date', 'invoice', 'customer_name', 'sub_total', 'received_amount'];
+        $columns = ['id', 'create_date', 'invoice', 'customer_name', 'balance', 'received_amount'];
         if (isset($columns[$column])) {
             if ($columns[$column] === 'customer_name') {
                 $query->join('stake_holders', 'invoices.customer_id', '=', 'stake_holders.id')
@@ -840,7 +840,7 @@ class SalesController extends Controller
             $query->orderBy('create_date', 'desc');
         }
 
-        $totalRecords = Invoice::whereRaw('sub_total > COALESCE(received_amount, 0)')->count();
+        $totalRecords = Invoice::whereRaw('balance > COALESCE(received_amount, 0)')->count();
         
         // Clone query for filtered count before pagination
         $filteredQuery = clone $query;
@@ -854,7 +854,7 @@ class SalesController extends Controller
         // Format data for DataTables
         $formattedData = $data->map(function ($invoice, $index) use ($start) {
             $receivedAmount = $invoice->received_amount ?? 0;
-            $pendingAmount = $invoice->sub_total - $receivedAmount;
+            $pendingAmount = $invoice->balance - $receivedAmount;
             
             // Calculate days overdue from create_date
             $createDate = \Carbon\Carbon::parse($invoice->create_date);
@@ -874,7 +874,7 @@ class SalesController extends Controller
             $receiveButton = '<button type="button" class="btn btn-info btn-sm btn-receive-amount" 
                 data-id="' . $invoice->id . '" 
                 data-invoice="' . $invoice->invoice . '" 
-                data-total="' . $invoice->sub_total . '" 
+                data-total="' . $invoice->balance . '" 
                 data-received="' . $receivedAmount . '" 
                 data-pending="' . $pendingAmount . '">
                 <i class="fas fa-hand-holding-usd"></i> Receive
@@ -885,7 +885,7 @@ class SalesController extends Controller
                 'create_date' => $invoice->create_date,
                 'invoice' => $invoice->invoice,
                 'customer_name' => $invoice->customer ? $invoice->customer->name : 'N/A',
-                'total_amount' => '₹' . number_format($invoice->sub_total, 2),
+                'total_amount' => '₹' . number_format($invoice->balance, 2),
                 'received_amount' => '₹' . number_format($receivedAmount, 2),
                 'pending_amount' => '<span class="text-danger font-weight-bold">₹' . number_format($pendingAmount, 2) . '</span>',
                 'days_overdue' => '<span class="badge ' . $overdueClass . '">' . $daysOverdue . ' days</span>',
@@ -907,7 +907,7 @@ class SalesController extends Controller
     public function getPendingSummary(Request $request)
     {
         $query = Invoice::query()
-            ->whereRaw('sub_total > COALESCE(received_amount, 0)');
+            ->whereRaw('balance > COALESCE(received_amount, 0)');
 
         // Filter by client
         if ($request->filled('client_id')) {
@@ -922,9 +922,17 @@ class SalesController extends Controller
             $query->where('create_date', '<=', $request->date_to);
         }
 
-        $totalInvoices = $query->count();
-        $totalAmount = $query->sum('sub_total');
-        $totalReceived = $query->sum('received_amount') ?? 0;
+        // Use selectRaw to get all aggregates in a single query to avoid query builder state issues
+        // Using balance instead of sub_total to include GST in total amount
+        $summary = $query->selectRaw('
+            COUNT(*) as total_invoices,
+            COALESCE(SUM(balance), 0) as total_amount,
+            COALESCE(SUM(received_amount), 0) as total_received
+        ')->first();
+
+        $totalInvoices = $summary->total_invoices ?? 0;
+        $totalAmount = floatval($summary->total_amount ?? 0);
+        $totalReceived = floatval($summary->total_received ?? 0);
         $totalPending = $totalAmount - $totalReceived;
 
         return response()->json([
@@ -942,7 +950,7 @@ class SalesController extends Controller
     {
         $query = Invoice::query()
             ->with('customer')
-            ->whereRaw('sub_total > COALESCE(received_amount, 0)');
+            ->whereRaw('balance > COALESCE(received_amount, 0)');
 
         // Filter by client
         if ($request->filled('client_id')) {
@@ -959,8 +967,8 @@ class SalesController extends Controller
 
         $invoices = $query->orderBy('create_date', 'desc')->get();
 
-        // Calculate totals
-        $totalAmount = $invoices->sum('sub_total');
+        // Calculate totals (using balance to include GST)
+        $totalAmount = $invoices->sum('balance');
         $totalReceived = $invoices->sum('received_amount') ?? 0;
         $totalPending = $totalAmount - $totalReceived;
 
@@ -993,14 +1001,14 @@ class SalesController extends Controller
             // Data rows
             foreach ($invoices as $index => $invoice) {
                 $receivedAmount = $invoice->received_amount ?? 0;
-                $pendingAmount = $invoice->sub_total - $receivedAmount;
+                $pendingAmount = $invoice->balance - $receivedAmount;
                 
                 fputcsv($file, [
                     $index + 1,
                     $invoice->create_date,
                     $invoice->invoice,
                     $invoice->customer ? $invoice->customer->name : 'N/A',
-                    $invoice->sub_total,
+                    $invoice->balance,
                     $receivedAmount,
                     $pendingAmount
                 ]);
@@ -1014,5 +1022,70 @@ class SalesController extends Controller
         };
 
         return response()->stream($callback, 200, $headers);
+    }
+
+    /**
+     * Helper function to convert image to base64 for PDF rendering
+     * Handles various path formats and provides fallback
+     *
+     * @param string|null $imagePath The image path from settings
+     * @param string $defaultImage Default image path relative to public folder
+     * @return string Base64 encoded image data URI
+     */
+    private function getImageBase64($imagePath, $defaultImage)
+    {
+        $fullPath = null;
+
+        // Try to resolve the image path
+        if (!empty($imagePath)) {
+            // Remove leading slash if present
+            $cleanPath = ltrim($imagePath, '/');
+            
+            // Check if it's a storage path
+            if (strpos($cleanPath, 'storage/') === 0) {
+                $fullPath = public_path($cleanPath);
+            }
+            // Check if path already includes 'public' or is absolute
+            elseif (file_exists(public_path($cleanPath))) {
+                $fullPath = public_path($cleanPath);
+            }
+            // Try as-is
+            elseif (file_exists($imagePath)) {
+                $fullPath = $imagePath;
+            }
+        }
+
+        // Fallback to default image if path not found or empty
+        if (empty($fullPath) || !file_exists($fullPath)) {
+            $fullPath = public_path($defaultImage);
+        }
+
+        // Final check - if still not found, return empty string
+        if (!file_exists($fullPath)) {
+            return '';
+        }
+
+        // Get file extension and read file contents
+        $imageType = strtolower(pathinfo($fullPath, PATHINFO_EXTENSION));
+        
+        // Map common extensions to MIME types
+        $mimeTypes = [
+            'jpg' => 'jpeg',
+            'jpeg' => 'jpeg',
+            'png' => 'png',
+            'gif' => 'gif',
+            'webp' => 'webp',
+            'svg' => 'svg+xml',
+        ];
+        
+        $mimeType = $mimeTypes[$imageType] ?? $imageType;
+        
+        $imageData = @file_get_contents($fullPath);
+        
+        if ($imageData === false) {
+            return '';
+        }
+
+        return 'data:image/' . $mimeType . ';base64,' . base64_encode($imageData);
     }
 }

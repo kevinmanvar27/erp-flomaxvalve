@@ -164,14 +164,14 @@
             @foreach($invoices as $index => $invoice)
                 @php
                     $receivedAmount = $invoice->received_amount ?? 0;
-                    $pendingAmount = $invoice->sub_total - $receivedAmount;
+                    $pendingAmount = $invoice->balance - $receivedAmount;
                 @endphp
                 <tr>
                     <td class="text-center">{{ $index + 1 }}</td>
                     <td>{{ $invoice->create_date }}</td>
                     <td>{{ $invoice->invoice }}</td>
                     <td>{{ $invoice->customer ? $invoice->customer->name : 'N/A' }}</td>
-                    <td class="text-right">Rs. {{ number_format($invoice->sub_total, 2) }}</td>
+                    <td class="text-right">Rs. {{ number_format($invoice->balance, 2) }}</td>
                     <td class="text-right">Rs. {{ number_format($receivedAmount, 2) }}</td>
                     <td class="text-right pending-amount">Rs. {{ number_format($pendingAmount, 2) }}</td>
                 </tr>

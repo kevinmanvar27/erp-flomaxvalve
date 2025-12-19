@@ -215,9 +215,7 @@ function numberToWordsWithCents($amount) {
         }
 
         .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            overflow: hidden;
             padding-bottom: 10px;
             border: 2px solid black;
             border-bottom: 0px;
@@ -336,10 +334,10 @@ function numberToWordsWithCents($amount) {
             clear: both;
         }
         .header .logo img {
-            width: 220px;
-            height: auto;
+            width: 200px;
+            max-width: 200px;
             margin-left: 32px;
-            margin-top:20px;
+            margin-top: 20px;
         }
 
 
@@ -362,7 +360,7 @@ function numberToWordsWithCents($amount) {
     <div class="invoice-container">
         <div class="header">
             <div class="logo">
-                <img src="{{$logoBase64}}" />
+                <img src="{{ $logoPath }}" style="width: 200px; margin-left: 32px; margin-top: 20px;" />
             </div>
             <div class="company-details">
                 <h2><i><b style="text-transform:uppercase;">{{$settings->company_name}}</b></i></h2>
@@ -757,7 +755,9 @@ function numberToWordsWithCents($amount) {
                         style="padding-top: 3pt;padding-left: 12pt;padding-right: 1pt;text-indent: 0pt;text-align: center;">
                         For, FLOMAX SOLENOID VALVE</p>
                     <p style="text-indent: 0pt;text-align: center;">
-                        <img src="{{$signatureBase64}}" style="width:70%;"/>
+                        @if(!empty($signaturePath))
+                            <img src="{{ $signaturePath }}" style="width:70%;"/>
+                        @endif
                     </p>
                     <p class="s13" style="padding-left: 12pt;text-indent: 0pt;line-height: 8pt;text-align: center;">
                         (Authorised Signatory)</p>

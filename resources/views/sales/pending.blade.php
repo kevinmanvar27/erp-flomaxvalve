@@ -293,7 +293,7 @@
                         { data: 'create_date', name: 'create_date' },
                         { data: 'invoice', name: 'invoice' },
                         { data: 'customer_name', name: 'customer_name' },
-                        { data: 'total_amount', name: 'sub_total' },
+                        { data: 'total_amount', name: 'balance' },
                         { data: 'received_amount', name: 'received_amount' },
                         { data: 'pending_amount', name: 'pending_amount', orderable: false },
                         { data: 'days_overdue', name: 'days_overdue', orderable: false },

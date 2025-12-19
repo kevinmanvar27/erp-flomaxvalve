@@ -43,11 +43,11 @@ class Invoice extends Model
     }
 
     /**
-     * Get the pending amount (sub_total - received_amount)
+     * Get the pending amount (balance - received_amount) - balance includes GST
      */
     public function getPendingAmountAttribute()
     {
-        return $this->sub_total - ($this->received_amount ?? 0);
+        return $this->balance - ($this->received_amount ?? 0);
     }
 
     /**
