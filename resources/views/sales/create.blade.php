@@ -381,6 +381,21 @@
     </script>
 
     <script>
+        // Auto-calculate due date (30 days from date)
+        $(document).ready(function () {
+            $('#date').change(function () {
+                var selectedDate = $(this).val();
+                if (selectedDate) {
+                    var date = new Date(selectedDate);
+                    date.setDate(date.getDate() + 30);
+                    var dueDate = date.toISOString().split('T')[0];
+                    $('#due_date').val(dueDate);
+                }
+            });
+        });
+    </script>
+
+    <script>
         $(document).ready(function () {
             $('#client_name').change(function () {
                 var clientId = $(this).val();

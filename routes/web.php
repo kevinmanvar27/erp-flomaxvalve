@@ -89,6 +89,10 @@ Route::middleware('auth')->group(function () {
     Route::get('sales/download/{id}', [SalesController::class, 'downloadPDF'])->name('sales.download');
     Route::get('sales/get-client-details/{id}', [SalesController::class, 'getClientDetails']);
     Route::post('sales/{id}/receive-amount', [SalesController::class, 'receiveAmount'])->name('sales.receiveAmount');
+    
+    // Return Products Routes
+    Route::get('sales/{id}/items', [SalesController::class, 'getInvoiceItems'])->name('sales.getItems');
+    Route::post('sales/{id}/return-products', [SalesController::class, 'returnProducts'])->name('sales.returnProducts');
 
     // Route to list rejection
     Route::get('/internalRejection', [GarbageController::class, 'internalRejection'])->name('rejection.internalRejection');

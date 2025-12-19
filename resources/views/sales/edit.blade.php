@@ -369,6 +369,17 @@
 
             // Initialize select2
             $('.select2').select2();
+
+            // Auto-calculate due date (30 days from date)
+            $('#date').change(function () {
+                var selectedDate = $(this).val();
+                if (selectedDate) {
+                    var date = new Date(selectedDate);
+                    date.setDate(date.getDate() + 30);
+                    var dueDate = date.toISOString().split('T')[0];
+                    $('#due_date').val(dueDate);
+                }
+            });
         });
     </script>
 @endsection

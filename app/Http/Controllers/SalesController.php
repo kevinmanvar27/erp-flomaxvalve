@@ -140,6 +140,12 @@ class SalesController extends Controller
             $receivedAmount = $invoice->received_amount ?? 0;
             $pendingAmount = $invoice->balance - $receivedAmount;
 
+            // Add Return Products button
+            $returnButton = '<button type="button" class="btn btn-warning btn-sm btn-return-products" 
+                data-id="' . $invoice->id . '">
+                <i class="fas fa-undo"></i> Return
+            </button> ';
+
             // Add receive amount button only if there's pending amount
             $receiveButton = '';
             if ($pendingAmount > 0) {
@@ -162,7 +168,7 @@ class SalesController extends Controller
                 'received_amount' => number_format($receivedAmount, 2),
                 'pending_amount' => number_format($pendingAmount, 2),
                 'total_item' => $invoice->items->count(),
-                'action' => $receiveButton . $actionButtons,
+                'action' => $returnButton . $receiveButton . $actionButtons,
             ];
         });
 
@@ -787,6 +793,237 @@ class SalesController extends Controller
                 'success' => false,
                 'message' => 'Failed to receive amount: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Get invoice items for return modal
+     */
+    public function getInvoiceItems($id)
+    {
+        if (!PermissionHelper::hasPermission('sales', 'read')) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized action.'], 403);
+        }
+
+        try {
+            $invoice = Invoice::with(['items.product', 'customer'])->findOrFail($id);
+            
+            $items = $invoice->items->map(function ($item) {
+                // Calculate already returned quantity for this item
+                $returnedQty = \DB::table('sales_returns')
+                    ->where('invoice_item_id', $item->id)
+                    ->sum('return_quantity');
+                
+                return [
+                    'id' => $item->id,
+                    'product_id' => $item->product_id,
+                    'product_name' => $item->product->name ?? 'N/A',
+                    'product_code' => $item->product->product_code ?? 'N/A',
+                    'quantity' => $item->quantity,
+                    'returned_quantity' => $returnedQty,
+                    'returnable_quantity' => $item->quantity - $returnedQty,
+                    'price' => $item->price,
+                    'remark' => $item->remark,
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'invoice' => [
+                    'id' => $invoice->id,
+                    'invoice_number' => $invoice->invoice,
+                    'customer_name' => $invoice->customer->name ?? 'N/A',
+                    'create_date' => $invoice->create_date,
+                ],
+                'items' => $items
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch invoice items: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Process product returns and restore quantity to finished products
+     * Also recalculates and updates invoice amounts
+     */
+    public function returnProducts(Request $request, $id)
+    {
+        if (!PermissionHelper::hasPermission('sales', 'update')) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized action.'], 403);
+        }
+
+        $request->validate([
+            'returns' => 'required|array',
+            'returns.*.item_id' => 'required|exists:invoice_items,id',
+            'returns.*.return_quantity' => 'required|numeric|min:0',
+        ]);
+
+        try {
+            \DB::beginTransaction();
+
+            $invoice = Invoice::with('items.product')->findOrFail($id);
+            $returns = $request->input('returns');
+            $totalReturned = 0;
+
+            foreach ($returns as $return) {
+                $returnQty = floatval($return['return_quantity']);
+                
+                if ($returnQty <= 0) {
+                    continue;
+                }
+
+                $item = $invoice->items->find($return['item_id']);
+                
+                if (!$item) {
+                    continue;
+                }
+
+                // Calculate already returned quantity for this item
+                $alreadyReturned = \DB::table('sales_returns')
+                    ->where('invoice_item_id', $item->id)
+                    ->sum('return_quantity');
+                
+                $maxReturnable = $item->quantity - $alreadyReturned;
+
+                if ($returnQty > $maxReturnable) {
+                    \DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => "Return quantity for {$item->product->name} exceeds returnable quantity ({$maxReturnable})."
+                    ], 422);
+                }
+
+                // Calculate amount reduction for this item
+                $itemAmountReduction = $returnQty * $item->price;
+
+                // Restore quantity to FinishedProduct for main product
+                $this->restoreQuantity($item->product_id, $returnQty);
+
+                // If there's a remark product, restore its quantity too
+                if (!empty($item->remark)) {
+                    $remarkProduct = Product::where('name', $item->remark)->first();
+                    if ($remarkProduct) {
+                        $this->restoreQuantity($remarkProduct->id, $returnQty);
+                    }
+                }
+
+                // Update the invoice item quantity (reduce by returned amount)
+                $item->quantity = $item->quantity - $returnQty;
+                $item->amount = $item->quantity * $item->price;
+                $item->save();
+
+                // Record the return in sales_returns table
+                \DB::table('sales_returns')->insert([
+                    'invoice_id' => $invoice->id,
+                    'invoice_item_id' => $item->id,
+                    'product_id' => $item->product_id,
+                    'return_quantity' => $returnQty,
+                    'return_amount' => $itemAmountReduction,
+                    'returned_by' => auth()->id(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                $totalReturned++;
+            }
+
+            if ($totalReturned === 0) {
+                \DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No products were returned. Please enter valid return quantities.'
+                ], 422);
+            }
+
+            // Recalculate invoice totals
+            $this->recalculateInvoiceTotals($invoice);
+
+            \DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => "Successfully returned {$totalReturned} product(s). Quantities restored to finished products and invoice amounts updated."
+            ]);
+
+        } catch (\Exception $e) {
+            \DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to process returns: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Recalculate invoice totals after return
+     */
+    private function recalculateInvoiceTotals($invoice)
+    {
+        // Refresh invoice items from database
+        $invoice->refresh();
+        $invoice->load('items');
+
+        // Calculate new subtotal from remaining items
+        $newSubtotal = $invoice->items->sum('amount');
+
+        // Get P & F Charge percentage
+        $pfChargePercent = floatval($invoice->pfcouriercharge) ?? 0;
+        $pfChargeAmount = ($newSubtotal * $pfChargePercent) / 100;
+
+        // Calculate discount
+        $discount = floatval($invoice->discount) ?? 0;
+        if ($invoice->discount_type === 'percentage') {
+            $discountAmount = ($newSubtotal * $discount) / 100;
+        } else {
+            $discountAmount = $discount;
+        }
+
+        // Calculate grand total (Subtotal + P&F - Discount)
+        $grandTotal = ($newSubtotal + $pfChargeAmount) - $discountAmount;
+
+        // Get GST rates
+        $cgstRate = (floatval($invoice->cgst) ?? 0) / 100;
+        $sgstRate = (floatval($invoice->sgst) ?? 0) / 100;
+        $igstRate = (floatval($invoice->igst) ?? 0) / 100;
+
+        // Calculate GST amounts
+        $cgstAmount = $grandTotal * $cgstRate;
+        $sgstAmount = $grandTotal * $sgstRate;
+        $igstAmount = $grandTotal * $igstRate;
+
+        // Calculate courier charge with GST if applicable
+        $courierCharge = floatval($invoice->courier_charge) ?? 0;
+        $courierChargeEnabled = $invoice->courier_charge_enabled ?? false;
+        
+        if ($courierChargeEnabled && $courierCharge > 0) {
+            $totalGstRate = $cgstRate + $sgstRate + $igstRate;
+            $finalCourierCharge = $courierCharge * (1 + $totalGstRate);
+        } else {
+            $finalCourierCharge = $courierCharge;
+        }
+
+        // Calculate final total
+        $finalTotal = $grandTotal + $cgstAmount + $sgstAmount + $igstAmount + $finalCourierCharge;
+
+        // Round off
+        $roundedTotal = round($finalTotal);
+        $roundOff = $roundedTotal - $finalTotal;
+
+        // Update invoice
+        $invoice->update([
+            'sub_total' => round($newSubtotal, 2),
+            'balance' => $roundedTotal,
+            'round_off' => round($roundOff, 2),
+        ]);
+
+        // Adjust received amount if it exceeds new balance
+        if ($invoice->received_amount > $roundedTotal) {
+            $invoice->update([
+                'received_amount' => $roundedTotal
+            ]);
         }
     }
 
