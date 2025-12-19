@@ -108,18 +108,24 @@ class SalesController extends Controller
         // Apply sorting
         $column = $request->input('order.0.column');
         $direction = $request->input('order.0.dir');
-        $columns = ['create_date', 'invoice', 'customer.name', 'amount', 'total_item'];
+        $columns = ['id', 'create_date', 'invoice', 'customer.name', 'amount', 'received_amount', 'pending_amount', 'total_item'];
         if (isset($columns[$column])) {
             $query->orderBy($columns[$column], $direction);
+        } else {
+            // Default sorting by id descending (newest first)
+            $query->orderBy('id', 'desc');
         }
 
-        // Pagination
-        $length = $request->input('length');
-        $start = $request->input('start');
-        $data = $query->skip($start)->take($length)->get();
-
+        // Get total records count (before filtering)
         $totalRecords = Invoice::count();
+        
+        // Get filtered records count (before pagination)
         $filteredRecords = $query->count();
+
+        // Pagination
+        $length = $request->input('length', 10);
+        $start = $request->input('start', 0);
+        $data = $query->skip($start)->take($length)->get();
 
         // Format data for DataTables
         $data = $data->isEmpty() ? [] : $data->map(function ($invoice, $index) use ($start) {

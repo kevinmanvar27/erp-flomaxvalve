@@ -190,9 +190,12 @@
                 $('#sales-table').DataTable({
                     processing: true,
                     serverSide: true,
-                    ajax: '{{ route('sales.data') }}',
+                    ajax: {
+                        url: '{{ route('sales.data') }}',
+                        type: 'GET'
+                    },
                     columns: [
-                        { data: 'id', name: 'id' },
+                        { data: 'id', name: 'id', orderable: false, searchable: false },
                         { data: 'create_date', name: 'create_date' },
                         { data: 'invoice', name: 'invoice' },
                         { data: 'customer_name', name: 'customer_name' },
@@ -204,11 +207,14 @@
                     ],
                     paging: true,
                     lengthChange: true,
-                    pageLength: 10, 
+                    pageLength: 10,
+                    lengthMenu: [[10, 25, 50, 100], [10, 25, 50, 100]],
                     searching: true,
                     ordering: true,
+                    order: [[1, 'desc']], // Default order by create_date descending
                     info: true,
                     autoWidth: false,
+                    responsive: true
                 });
             });
 
