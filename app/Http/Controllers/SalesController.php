@@ -1174,40 +1174,69 @@ class SalesController extends Controller
      */
     public function getPendingSummary(Request $request)
     {
-        $query = Invoice::query()
-            ->whereRaw('balance > COALESCE(received_amount, 0)');
+        // Build base filters
+        $clientId = $request->filled('client_id') ? $request->client_id : null;
+        $dateFrom = $request->filled('date_from') ? $request->date_from : null;
+        $dateTo = $request->filled('date_to') ? $request->date_to : null;
 
-        // Filter by client
-        if ($request->filled('client_id')) {
-            $query->where('customer_id', $request->client_id);
-        }
+        // Get pending invoices summary
+        $pendingSummary = Invoice::query()
+            ->whereRaw('balance > COALESCE(received_amount, 0)')
+            ->when($clientId, function($q) use ($clientId) {
+                $q->where('customer_id', $clientId);
+            })
+            ->when($dateFrom, function($q) use ($dateFrom) {
+                $q->where('create_date', '>=', $dateFrom);
+            })
+            ->when($dateTo, function($q) use ($dateTo) {
+                $q->where('create_date', '<=', $dateTo);
+            })
+            ->selectRaw('
+                COUNT(*) as total_invoices,
+                COALESCE(SUM(balance), 0) as total_amount,
+                COALESCE(SUM(received_amount), 0) as total_received
+            ')->first();
 
-        // Filter by date range
-        if ($request->filled('date_from')) {
-            $query->where('create_date', '>=', $request->date_from);
-        }
-        if ($request->filled('date_to')) {
-            $query->where('create_date', '<=', $request->date_to);
-        }
+        // Get total sales amount (ALL invoices - not just pending)
+        $totalSalesAmount = Invoice::query()
+            ->when($clientId, function($q) use ($clientId) {
+                $q->where('customer_id', $clientId);
+            })
+            ->when($dateFrom, function($q) use ($dateFrom) {
+                $q->where('create_date', '>=', $dateFrom);
+            })
+            ->when($dateTo, function($q) use ($dateTo) {
+                $q->where('create_date', '<=', $dateTo);
+            })
+            ->selectRaw('COALESCE(SUM(balance), 0) as total')
+            ->value('total');
 
-        // Use selectRaw to get all aggregates in a single query to avoid query builder state issues
-        // Using balance instead of sub_total to include GST in total amount
-        $summary = $query->selectRaw('
-            COUNT(*) as total_invoices,
-            COALESCE(SUM(balance), 0) as total_amount,
-            COALESCE(SUM(received_amount), 0) as total_received
-        ')->first();
+        // Get total received amount (ALL invoices - not just pending)
+        $totalReceivedAll = Invoice::query()
+            ->when($clientId, function($q) use ($clientId) {
+                $q->where('customer_id', $clientId);
+            })
+            ->when($dateFrom, function($q) use ($dateFrom) {
+                $q->where('create_date', '>=', $dateFrom);
+            })
+            ->when($dateTo, function($q) use ($dateTo) {
+                $q->where('create_date', '<=', $dateTo);
+            })
+            ->selectRaw('COALESCE(SUM(received_amount), 0) as total')
+            ->value('total');
 
-        $totalInvoices = $summary->total_invoices ?? 0;
-        $totalAmount = floatval($summary->total_amount ?? 0);
-        $totalReceived = floatval($summary->total_received ?? 0);
+        $totalInvoices = $pendingSummary->total_invoices ?? 0;
+        $totalAmount = floatval($pendingSummary->total_amount ?? 0);
+        $totalReceived = floatval($pendingSummary->total_received ?? 0);
         $totalPending = $totalAmount - $totalReceived;
 
         return response()->json([
             'total_invoices' => $totalInvoices,
             'total_amount' => $totalAmount,
             'total_received' => $totalReceived,
-            'total_pending' => $totalPending
+            'total_pending' => $totalPending,
+            'total_sales' => floatval($totalSalesAmount ?? 0),
+            'total_received_all' => floatval($totalReceivedAll ?? 0)
         ]);
     }
 

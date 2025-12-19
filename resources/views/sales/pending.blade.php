@@ -75,7 +75,7 @@
                         <div class="small-box bg-info">
                             <div class="inner">
                                 <h3 id="total_invoices">0</h3>
-                                <p>Total Pending Invoices</p>
+                                <p>Pending Invoices</p>
                             </div>
                             <div class="icon">
                                 <i class="fas fa-file-invoice"></i>
@@ -83,18 +83,18 @@
                         </div>
                     </div>
                     <div class="col-lg-3 col-6">
-                        <div class="small-box bg-success">
+                        <div class="small-box bg-primary">
                             <div class="inner">
-                                <h3>₹<span id="total_amount">0.00</span></h3>
-                                <p>Total Invoice Amount</p>
+                                <h3>₹<span id="total_sales">0.00</span></h3>
+                                <p>Total Sales Amount</p>
                             </div>
                             <div class="icon">
-                                <i class="fas fa-rupee-sign"></i>
+                                <i class="fas fa-chart-line"></i>
                             </div>
                         </div>
                     </div>
                     <div class="col-lg-3 col-6">
-                        <div class="small-box bg-warning">
+                        <div class="small-box bg-success">
                             <div class="inner">
                                 <h3>₹<span id="total_received">0.00</span></h3>
                                 <p>Total Received Amount</p>
@@ -329,9 +329,9 @@
                         },
                         success: function(response) {
                             $('#total_invoices').text(response.total_invoices);
-                            $('#total_amount').text(formatNumber(response.total_amount));
-                            $('#total_received').text(formatNumber(response.total_received));
-                            $('#grand_total_pending').text(formatNumber(response.total_pending));
+                            $('#total_sales').text(formatNumber(response.total_sales));
+                            $('#total_received').text(formatNumber(response.total_received_all));
+                            $('#grand_total_pending').text(formatNumber(response.total_sales - response.total_received_all));
                             
                             // Update footer totals
                             $('#footer_total_amount').text('₹' + formatNumber(response.total_amount));
