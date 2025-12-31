@@ -422,7 +422,8 @@ function numberToWordsWithCents($amount) {
                     </p>
                     
                     
-                    <p class="s6" style="padding-left: 1pt;text-indent: 0pt;text-align: left;">    Date <b style="margin-left: 27px;">: {{ now()->format('d-m-Y')  }}</b>
+                    <p class="s6" style="padding-left: 1pt;text-indent: 0pt;text-align: left;">    Date <b style="margin-left: 27px;">: {{ \Carbon\Carbon::parse($invoice->create_date)->format('d-m-Y') }}</b>
+                    <p class="s6" style="padding-left: 1pt;text-indent: 0pt;text-align: left;">    Due Date <b style="margin-left: 10px;">: {{ \Carbon\Carbon::parse($invoice->due_date)->format('d-m-Y') }}</b>
                     <p class="s6" style="padding-left: 1pt;text-indent: 0pt;text-align: left;">Order No. <b style="margin-left: 5.5px;">: {{ $invoice->orderno }}</b>
                     <p class="s6" style="padding-left: 1pt;text-indent: 0pt;text-align: left;">Transport <b style="margin-left: 7px;">: {{ $invoice->transport }}</b>
                     </p>
@@ -515,6 +516,7 @@ function numberToWordsWithCents($amount) {
                     <td class="center-align productRecordsBottomBorderHide"></td>
                     <td class="center-align productRecordsBottomBorderHide"></td>
                 </tr>
+                <?php if($invoice->pfcouriercharge > 0) { ?>
                 <tr style="margin-top:10px;">
                     <td class="center-align productRecordsBottomBorderHide"></td>
                     <td class="productRecordsBottomBorderHide" style="text-align: right;">P & F Charge</td>
@@ -524,9 +526,32 @@ function numberToWordsWithCents($amount) {
                     <td class="center-align productRecordsBottomBorderHide">{{$invoice->pfcouriercharge}}%</td>
                     <td class="center-align productRecordsBottomBorderHide">{{number_format(($subTotal*$invoice->pfcouriercharge)/100, 2)}}</td>
                 </tr>
+                <?php } ?>
                 <?php 
                     $grandTotal = $subTotal+(($subTotal*$invoice->pfcouriercharge)/100);
+                    
+                    // Calculate discount amount
+                    $discountAmount = 0;
+                    if ($invoice->discount > 0) {
+                        if ($invoice->discount_type == 'percentage') {
+                            $discountAmount = ($grandTotal * $invoice->discount) / 100;
+                        } else {
+                            $discountAmount = $invoice->discount;
+                        }
+                    }
+                    $grandTotalAfterDiscount = $grandTotal - $discountAmount;
                 ?>
+                <?php if($invoice->discount > 0) { ?>
+                <tr style="margin-top:10px;">
+                    <td class="center-align productRecordsBottomBorderHide"></td>
+                    <td class="productRecordsBottomBorderHide" style="text-align: right;">Discount ({{ $invoice->discount_type == 'percentage' ? $invoice->discount . '%' : 'Flat' }})</td>
+                    <td class="center-align productRecordsBottomBorderHide"></td>
+                    <td class="center-align productRecordsBottomBorderHide"></td>
+                    <td class="center-align productRecordsBottomBorderHide"></td>
+                    <td class="center-align productRecordsBottomBorderHide"></td>
+                    <td class="center-align productRecordsBottomBorderHide">-{{number_format($discountAmount, 2)}}</td>
+                </tr>
+                <?php } ?>
                 <tr class="courier-row" style="font-weight: bold;">
                     <td colspan="2" style="text-align: left; background-color: rgb(216, 216, 216);">
                         <!--GSTIN No.: {{isset($invoice->customer->GSTIN)?$invoice->customer->GSTIN:''}}-->
@@ -535,7 +560,7 @@ function numberToWordsWithCents($amount) {
                     <td class="center-align">Total Qty:</td>
                     <td class="center-align" style="text-align:center;">{{$totalQty}}</td>
                     <td class="center-align" colspan="2" style="text-align: left;">Sub Total.:</td>
-                    <td class="center-align" style="text-align:center;">{{number_format($grandTotal,2)}}</td>
+                    <td class="center-align" style="text-align:center;">{{number_format($grandTotalAfterDiscount,2)}}</td>
                 </tr>
                 <tr>
                     <td colspan="4" style="padding: 0px;">
@@ -584,18 +609,18 @@ function numberToWordsWithCents($amount) {
                     </td>
                 </tr>
                 <?php 
-                    $totalGst = (($grandTotal*$invoice->sgst)/100)+(($grandTotal*$invoice->cgst)/100)+(($grandTotal*$invoice->igst)/100);
+                    $totalGst = (($grandTotalAfterDiscount*$invoice->sgst)/100)+(($grandTotalAfterDiscount*$invoice->cgst)/100)+(($grandTotalAfterDiscount*$invoice->igst)/100);
                 ?>
                 <tr>
                     <td colspan="4" style="padding: 0px;">
                         <table class="bankDetailsGst">
                             <tr>
-                                <td > Total GST.:<?php echo numberToWordsWithCents($totalGst); ?>   </td>
+                                <td > Total GST.: <?php echo numberToWordsWithCents($totalGst); ?>   </td>
                             </tr>
                         </table> 
                     </td>
                     <td colspan="3" style="padding: 0px 0px 0px 4px;border: none;">
-                        <span>Taxable Amount</span>
+                        <span>Taxable Amount: {{number_format($grandTotalAfterDiscount, 2)}}</span>
                         
                         
                         <?php if($invoice->cgst != 0 ) {  ?>
@@ -604,7 +629,7 @@ function numberToWordsWithCents($amount) {
                                 <td style="border:none !important;padding-left:0px;padding: 0px;  width:90px;">CGST</td>
                                 <td style="border:none !important;padding: 0px; width:90px;">{{$invoice->cgst}}%</td>
                                 <td style="border:none !important;padding: 0px; text-align: right;">
-                                    {{number_format(($grandTotal*$invoice->cgst)/100,2)}} &nbsp;
+                                    {{number_format(($grandTotalAfterDiscount*$invoice->cgst)/100,2)}} &nbsp;
                                 </td>
                             </tr>
                         </table>
@@ -629,7 +654,7 @@ function numberToWordsWithCents($amount) {
                                 <td style="border:none !important;padding-left:0px;padding: 0px; width:90px;">SGST</td>
                                 <td style="border:none !important;padding: 0px; width:90px;">{{$invoice->sgst}}%</td>
                                 <td style="border:none !important;padding: 0px; text-align: right;">
-                                    {{number_format(($grandTotal*$invoice->sgst)/100,2)}} &nbsp;
+                                    {{number_format(($grandTotalAfterDiscount*$invoice->sgst)/100,2)}} &nbsp;
                                 </td>                            
                             </tr>
                         </table>
@@ -642,20 +667,41 @@ function numberToWordsWithCents($amount) {
                                 <td style="border:none !important;padding-left:0px;padding: 0px; width:90px;">IGST</td>
                                 <td style="border:none !important;padding: 0px; width:90px;">{{$invoice->igst}}%</td>
                                 <td style="border:none !important;padding: 0px; text-align: right;">
-                                    {{number_format(($grandTotal*$invoice->igst)/100,2)}} &nbsp;
+                                    {{number_format(($grandTotalAfterDiscount*$invoice->igst)/100,2)}} &nbsp;
                                 </td>                            
                             </tr>
                         </table>
                         <?php } ?>
                         
-                        <?php if( $invoice->courier_charge != 0 ) { ?>
+                        <?php 
+                            // Calculate courier charge with GST if enabled
+                            $courierChargeBase = $invoice->courier_charge ?? 0;
+                            $courierGstAmount = 0;
+                            $totalGstRate = ($invoice->cgst + $invoice->sgst + $invoice->igst);
+                            
+                            if ($invoice->courier_charge_enabled && $courierChargeBase > 0) {
+                                $courierGstAmount = ($courierChargeBase * $totalGstRate) / 100;
+                            }
+                            $totalCourierWithGst = $courierChargeBase + $courierGstAmount;
+                        ?>
+                        
+                        <?php if( $courierChargeBase != 0 ) { ?>
                         <table style="width: 100%; ">
                             <tr>
                                 <td style="border:none !important;padding-left:0px;padding: 0px; width:90px;">Courier Charge</td>
                                 <td style="border:none !important;padding: 0px; width:90px;"></td>
-                                <td style="border:none !important;padding: 0px; text-align: right;">{{$invoice->courier_charge}} &nbsp;</td>                            
+                                <td style="border:none !important;padding: 0px; text-align: right;">{{number_format($courierChargeBase, 2)}} &nbsp;</td>                            
                             </tr>
                         </table>
+                        <?php if($invoice->courier_charge_enabled && $courierGstAmount > 0) { ?>
+                        <table style="width: 100%; ">
+                            <tr>
+                                <td style="border:none !important;padding-left:0px;padding: 0px; width:90px;">Courier GST</td>
+                                <td style="border:none !important;padding: 0px; width:90px;">{{$totalGstRate}}%</td>
+                                <td style="border:none !important;padding: 0px; text-align: right;">{{number_format($courierGstAmount, 2)}} &nbsp;</td>                            
+                            </tr>
+                        </table>
+                        <?php } ?>
                         <?php } ?>
 
                         <table style="width: 100%;">
@@ -664,9 +710,15 @@ function numberToWordsWithCents($amount) {
                                 <td colspan="2" style="border:none !important;padding:0px;padding-top:4px;  width:90px;">Round Off</td>
                                 <td style="border:none !important;padding: 0px;padding-top:4px;text-align: right;">
                                     <?php
-                                    $r_off_total = $grandTotal+ (($grandTotal*$invoice->cgst)/100) + (($grandTotal*$invoice->sgst)/100) + (($grandTotal*$invoice->igst)/100);
-                                    $difference = round($r_off_total) - $r_off_total;
-                                    echo ($difference !== 0 ? ($difference > 0 ? "+" : "-") . number_format(abs($difference), 2) : "0") . "\n";
+                                    // Use saved round_off value if available, otherwise calculate
+                                    if (isset($invoice->round_off) && $invoice->round_off != 0) {
+                                        $roundOffValue = $invoice->round_off;
+                                        echo ($roundOffValue >= 0 ? "+" : "") . number_format($roundOffValue, 2);
+                                    } else {
+                                        $r_off_total = $grandTotalAfterDiscount + (($grandTotalAfterDiscount*$invoice->cgst)/100) + (($grandTotalAfterDiscount*$invoice->sgst)/100) + (($grandTotalAfterDiscount*$invoice->igst)/100) + $totalCourierWithGst;
+                                        $difference = round($r_off_total) - $r_off_total;
+                                        echo ($difference !== 0 ? ($difference > 0 ? "+" : "") . number_format($difference, 2) : "0");
+                                    }
                                     ?>&nbsp;
                                 </td>
                             </tr>

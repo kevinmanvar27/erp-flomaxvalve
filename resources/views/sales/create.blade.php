@@ -200,11 +200,11 @@
                                     <tr>
                                         <td>
                                             <label class="form-check-label" for="courier_charge_enabled">Courier Charge</label><br>
-                                            <!-- <div class="form-check"> -->
+                                            <div class="form-check">
                                                 <label>
                                                     <input type="checkbox" class="form-check-input" id="courier_charge_enabled" name="courier_charge_enabled" value="1"> Add courier GST
                                                 </label>
-                                            <!-- </div> -->
+                                            </div>
                                         </td>
                                         <td><input type="number" class="form-control" id="courier_charge" name="courier_charge" value="0" /></td>
                                     </tr>

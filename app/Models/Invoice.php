@@ -27,6 +27,7 @@ class Invoice extends Model
         'discount_type',
         'pfcouriercharge',
         'courier_charge',
+        'courier_charge_enabled',
         'transport',
         'orderno',
         'round_off',
