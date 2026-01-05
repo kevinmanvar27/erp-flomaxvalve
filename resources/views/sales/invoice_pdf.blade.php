@@ -8,15 +8,17 @@ function numberToWords($number) {
     if ($number < 21) {
         return $words[$number];
     } else if ($number < 100) {
-        return $words[($number - $number % 10)] . (($number % 10) ? '-' . $words[$number % 10] : '');
+        return $words[($number - $number % 10)] . (($number % 10) ? ' ' . $words[$number % 10] : '');
     } else if ($number < 1000) {
-        return $words[intval($number / 100)] . ' Hundred' . (($number % 100) ? ' and ' . numberToWords($number % 100) : '');
-    } else if ($number < 1000000) {
+        return $words[intval($number / 100)] . ' Hundred' . (($number % 100) ? ' ' . numberToWords($number % 100) : '');
+    } else if ($number < 100000) {
         return numberToWords(intval($number / 1000)) . ' Thousand' . (($number % 1000) ? ' ' . numberToWords($number % 1000) : '');
+    } else if ($number < 10000000) {
+        return numberToWords(intval($number / 100000)) . ' Lakh' . (($number % 100000) ? ' ' . numberToWords($number % 100000) : '');
     } else if ($number < 1000000000) {
-        return numberToWords(intval($number / 1000000)) . ' Million' . (($number % 1000000) ? ' ' . numberToWords($number % 1000000) : '');
-    } else if ($number < 1000000000000) {
-        return numberToWords(intval($number / 1000000000)) . ' Billion' . (($number % 1000000000) ? ' ' . numberToWords($number % 1000000000) : '');
+        return numberToWords(intval($number / 10000000)) . ' Crore' . (($number % 10000000) ? ' ' . numberToWords($number % 10000000) : '');
+    } else {
+        return numberToWords(intval($number / 1000000000)) . ' Arab' . (($number % 1000000000) ? ' ' . numberToWords($number % 1000000000) : '');
     }
     return '';
 }
