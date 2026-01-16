@@ -316,7 +316,8 @@ class SalesController extends Controller
                 'subtotal' => 'required|numeric|min:0',
                 'discount' => 'nullable|numeric|min:0',
                 'pfcouriercharge' => 'nullable|numeric|min:0',
-                'courier_charge' => 'nullable|numeric|min:0',
+                'courier_charge_before_gst' => 'nullable|numeric|min:0',
+                'courier_charge_after_gst' => 'nullable|numeric|min:0',
                 'balance' => 'required|numeric|min:0',
                 'cgst' => 'nullable|numeric|min:0',
                 'sgst' => 'nullable|numeric|min:0',
@@ -388,8 +389,8 @@ class SalesController extends Controller
                 'lrno' => $request->input('lrno'),
                 'transport' => $request->input('transport'),
                 'orderno' => $request->input('orderno'),
-                'courier_charge' => $request->input('courier_charge'),
-                'courier_charge_enabled' => $request->has('courier_charge_enabled') ? 1 : 0,
+                'courier_charge_before_gst' => $request->input('courier_charge_before_gst') ?? 0,
+                'courier_charge_after_gst' => $request->input('courier_charge_after_gst') ?? 0,
                 'status' => $request->input('status'),
                 'sub_total' => $request->input('subtotal'),
                 'discount' => $request->input('discount'),
@@ -503,7 +504,8 @@ class SalesController extends Controller
             'subtotal' => 'required|numeric|min:0',
             'discount' => 'nullable|numeric|min:0',
             'pfcouriercharge' => 'nullable|numeric|min:0',
-            'courier_charge' => 'nullable|numeric|min:0',
+            'courier_charge_before_gst' => 'nullable|numeric|min:0',
+            'courier_charge_after_gst' => 'nullable|numeric|min:0',
             'balance' => 'required|numeric|min:0',
             'cgst' => 'nullable|numeric|min:0',
             'sgst' => 'nullable|numeric|min:0',
@@ -612,8 +614,8 @@ class SalesController extends Controller
             'lrno' => $request->input('lrno'),
             'orderno' => $request->input('orderno'),
             'transport' => $request->input('transport'),
-            'courier_charge' => $request->input('courier_charge'),
-            'courier_charge_enabled' => $request->has('courier_charge_enabled') ? 1 : 0,
+            'courier_charge_before_gst' => $request->input('courier_charge_before_gst') ?? 0,
+            'courier_charge_after_gst' => $request->input('courier_charge_after_gst') ?? 0,
             'status' => $request->input('status'),
             'sub_total' => $request->input('subtotal'),
             'discount' => $request->input('discount'),
@@ -1012,15 +1014,16 @@ class SalesController extends Controller
         $igstAmount = $grandTotal * $igstRate;
 
         // Calculate courier charge with GST if applicable
-        $courierCharge = floatval($invoice->courier_charge) ?? 0;
-        $courierChargeEnabled = $invoice->courier_charge_enabled ?? false;
+        $courierBeforeGst = floatval($invoice->courier_charge_before_gst) ?? 0;
+        $courierAfterGst = floatval($invoice->courier_charge_after_gst) ?? 0;
         
-        if ($courierChargeEnabled && $courierCharge > 0) {
+        // GST is applied on courier_before_gst
+        $courierGstAmount = 0;
+        if ($courierBeforeGst > 0) {
             $totalGstRate = $cgstRate + $sgstRate + $igstRate;
-            $finalCourierCharge = $courierCharge * (1 + $totalGstRate);
-        } else {
-            $finalCourierCharge = $courierCharge;
+            $courierGstAmount = $courierBeforeGst * $totalGstRate;
         }
+        $finalCourierCharge = $courierBeforeGst + $courierGstAmount + $courierAfterGst;
 
         // Calculate final total
         $finalTotal = $grandTotal + $cgstAmount + $sgstAmount + $igstAmount + $finalCourierCharge;

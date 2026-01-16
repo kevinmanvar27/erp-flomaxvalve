@@ -172,6 +172,10 @@
                                         <td><input type="text" class="form-control" id="subtotal" name="subtotal" value="{{ $invoice->sub_total }}" readonly></td>
                                     </tr>
                                     <tr>
+                                        <td>Courier (With GST)</td>
+                                        <td><input type="number" class="form-control" id="courier_charge_before_gst" name="courier_charge_before_gst" value="{{ $invoice->courier_charge_before_gst ?? 0 }}" /></td>
+                                    </tr>
+                                    <tr>
                                         <td>P & F Charge</td>
                                         <td>
                                             <input type="number" step='0.1' class="form-control mt-2" id="pfcouriercharge" value="{{ $invoice->pfcouriercharge }}"
@@ -201,15 +205,8 @@
                                         <td><input type="number" class="form-control" id="igst" name="igst" value="{{ $invoice->igst }}"></td>
                                     </tr>
                                     <tr>
-                                        <td>
-                                            <label class="form-check-label" for="courier_charge_enabled">Courier Charge</label><br>
-                                            <div class="form-check">
-                                                <label for="">
-                                                    <input type="checkbox" class="form-check-input" id="courier_charge_enabled" name="courier_charge_enabled" value="1" {{ $invoice->courier_charge_enabled ? 'checked' : '' }}> Add courier GST
-                                                </label>
-                                            </div>
-                                        </td>
-                                        <td><input type="number" class="form-control" id="courier_charge" name="courier_charge" value="{{ $invoice->courier_charge }}" /></td>
+                                        <td>Courier (Without GST)</td>
+                                        <td><input type="number" class="form-control" id="courier_charge_after_gst" name="courier_charge_after_gst" value="{{ $invoice->courier_charge_after_gst ?? 0 }}" /></td>
                                     </tr>
                                     <tr>
                                         <td>Round Off</td>
@@ -259,6 +256,11 @@
     </script>
     <script>
         $(document).ready(function() {
+            // Enable disabled courier fields before form submit to ensure values are sent
+            $('form').on('submit', function() {
+                $('#courier_charge_before_gst, #courier_charge_after_gst').prop('disabled', false);
+            });
+
             // Function to calculate amounts
             calculateAmounts();
             function calculateAmounts() { 
@@ -276,9 +278,10 @@
                 // Set subtotal value
                 $('#subtotal').val(subtotal.toFixed(2));
 
-                // Get P & F / Courier Charge
+                // Get P & F / Courier Charges
                 const pfcouriercharge = parseFloat($('#pfcouriercharge').val()) || 0;
-                const courier_charge = parseFloat($('#courier_charge').val()) || 0;
+                const courierBeforeGst = parseFloat($('#courier_charge_before_gst').val()) || 0;
+                const courierAfterGst = parseFloat($('#courier_charge_after_gst').val()) || 0;
 
                 // Calculate discount
                 let discount = parseFloat($('#discount').val()) || 0;
@@ -287,36 +290,26 @@
                     discount = (subtotal * discount) / 100;
                 }
 
-                // Calculate grand total (Subtotal + P & F - Discount)
-                const pfcourierchargeAmount = ((subtotal)*pfcouriercharge)/100;
-                const grandTotal = (subtotal + pfcourierchargeAmount) - discount;
+                // Calculate P&F charge amount
+                const pfcourierchargeAmount = ((subtotal) * pfcouriercharge) / 100;
+                
+                // Grand total includes courier_before_gst (GST will be applied on this)
+                const grandTotal = (subtotal + pfcourierchargeAmount + courierBeforeGst) - discount;
 
-                // Get CGST and SGST rates and calculate tax
+                // Get CGST, SGST, IGST rates and calculate tax
                 const cgstRate = (parseFloat($('#cgst').val()) || 0) / 100;
                 const sgstRate = (parseFloat($('#sgst').val()) || 0) / 100;
                 const igstRate = (parseFloat($('#igst').val()) || 0) / 100;
 
-                // Calculate total tax amounts on grand total
+                // Calculate total tax amounts on grand total (which includes courier_before_gst)
                 const cgstAmount = grandTotal * cgstRate;
                 const sgstAmount = grandTotal * sgstRate;
                 const igstAmount = grandTotal * igstRate;
 
-                // Calculate courier charge with or without GST based on checkbox
-                const courierChargeEnabled = $('#courier_charge_enabled').is(':checked');
-                let finalCourierCharge = 0;
-                
-                if (courierChargeEnabled && courier_charge > 0) {
-                    // Courier charge with GST (CGST + SGST + IGST)
-                    const totalGstRate = cgstRate + sgstRate + igstRate;
-                    finalCourierCharge = courier_charge * (1 + totalGstRate);
-                } else {
-                    finalCourierCharge = courier_charge;
-                }
+                // Calculate final total (Grand total + GST + Courier After GST)
+                const finalTotal = grandTotal + cgstAmount + sgstAmount + igstAmount + courierAfterGst;
 
-                // Calculate final total (Grand total + SGST + CGST + Courier with GST)
-                const finalTotal = grandTotal + cgstAmount + sgstAmount + igstAmount + finalCourierCharge;
-
-                // Set final total
+                // Set final total with round off
                 var roundedValue = Math.round(finalTotal);
                 var difference = roundedValue - finalTotal;
                 $('#total').val(roundedValue);
@@ -326,9 +319,33 @@
             // Calculate amounts on change
            
             $(document).on('change', 
-                'input[name="quantity[]"], input[name="price[]"], #discount, #discount_type, #cgst, #sgst, #igst, #courier_charge, #pfcouriercharge, #courier_charge_enabled', 
+                'input[name="quantity[]"], input[name="price[]"], #discount, #discount_type, #cgst, #sgst, #igst, #courier_charge_before_gst, #courier_charge_after_gst, #pfcouriercharge', 
                 calculateAmounts
             );
+
+            // Courier field toggle - disable one when other has value
+            function toggleCourierFields() {
+                const beforeGst = parseFloat($('#courier_charge_before_gst').val()) || 0;
+                const afterGst = parseFloat($('#courier_charge_after_gst').val()) || 0;
+                
+                if (beforeGst > 0) {
+                    $('#courier_charge_after_gst').prop('disabled', true).css('background-color', '#e9ecef');
+                } else if (afterGst > 0) {
+                    $('#courier_charge_before_gst').prop('disabled', true).css('background-color', '#e9ecef');
+                } else {
+                    $('#courier_charge_before_gst').prop('disabled', false).css('background-color', '');
+                    $('#courier_charge_after_gst').prop('disabled', false).css('background-color', '');
+                }
+            }
+
+            // Run on input for immediate feedback
+            $(document).on('input', '#courier_charge_before_gst, #courier_charge_after_gst', function() {
+                toggleCourierFields();
+                calculateAmounts();
+            });
+
+            // Initialize on page load
+            toggleCourierFields();
 
 
 
@@ -375,7 +392,7 @@
                 var selectedDate = $(this).val();
                 if (selectedDate) {
                     var date = new Date(selectedDate);
-                    date.setDate(date.getDate() + 30);
+                    date.setDate(date.getDate() + 45);
                     var dueDate = date.toISOString().split('T')[0];
                     $('#due_date').val(dueDate);
                 }

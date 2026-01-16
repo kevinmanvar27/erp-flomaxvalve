@@ -532,6 +532,11 @@ function numberToWordsWithCents($amount) {
                 <?php 
                     $grandTotal = $subTotal+(($subTotal*$invoice->pfcouriercharge)/100);
                     
+                    // Get courier charges (new fields)
+                    $courierBeforeGst = $invoice->courier_charge_before_gst ?? 0;
+                    $courierAfterGst = $invoice->courier_charge_after_gst ?? 0;
+                    $totalGstRate = ($invoice->cgst + $invoice->sgst + $invoice->igst);
+                    
                     // Calculate discount amount
                     $discountAmount = 0;
                     if ($invoice->discount > 0) {
@@ -541,7 +546,15 @@ function numberToWordsWithCents($amount) {
                             $discountAmount = $invoice->discount;
                         }
                     }
-                    $grandTotalAfterDiscount = $grandTotal - $discountAmount;
+                    // Grand total after discount includes courier_before_gst (GST will be applied on this)
+                    $grandTotalAfterDiscount = $grandTotal - $discountAmount + $courierBeforeGst;
+                    
+                    // Calculate GST on courier_before_gst
+                    $courierGstAmount = 0;
+                    if ($courierBeforeGst > 0) {
+                        $courierGstAmount = ($courierBeforeGst * $totalGstRate) / 100;
+                    }
+                    $totalCourierWithGst = $courierBeforeGst + $courierGstAmount + $courierAfterGst;
                 ?>
                 <?php if($invoice->discount > 0) { ?>
                 <tr style="margin-top:10px;">
@@ -552,6 +565,17 @@ function numberToWordsWithCents($amount) {
                     <td class="center-align productRecordsBottomBorderHide"></td>
                     <td class="center-align productRecordsBottomBorderHide"></td>
                     <td class="center-align productRecordsBottomBorderHide">-{{number_format($discountAmount, 2)}}</td>
+                </tr>
+                <?php } ?>
+                <?php if($courierBeforeGst > 0) { ?>
+                <tr style="margin-top:10px;">
+                    <td class="center-align productRecordsBottomBorderHide"></td>
+                    <td class="productRecordsBottomBorderHide" style="text-align: right;">Courier (With GST)</td>
+                    <td class="center-align productRecordsBottomBorderHide"></td>
+                    <td class="center-align productRecordsBottomBorderHide"></td>
+                    <td class="center-align productRecordsBottomBorderHide"></td>
+                    <td class="center-align productRecordsBottomBorderHide"></td>
+                    <td class="center-align productRecordsBottomBorderHide">{{number_format($courierBeforeGst, 2)}}</td>
                 </tr>
                 <?php } ?>
                 <tr class="courier-row" style="font-weight: bold;">
@@ -675,35 +699,14 @@ function numberToWordsWithCents($amount) {
                         </table>
                         <?php } ?>
                         
-                        <?php 
-                            // Calculate courier charge with GST if enabled
-                            $courierChargeBase = $invoice->courier_charge ?? 0;
-                            $courierGstAmount = 0;
-                            $totalGstRate = ($invoice->cgst + $invoice->sgst + $invoice->igst);
-                            
-                            if ($invoice->courier_charge_enabled && $courierChargeBase > 0) {
-                                $courierGstAmount = ($courierChargeBase * $totalGstRate) / 100;
-                            }
-                            $totalCourierWithGst = $courierChargeBase + $courierGstAmount;
-                        ?>
-                        
-                        <?php if( $courierChargeBase != 0 ) { ?>
+                        <?php if($courierAfterGst > 0) { ?>
                         <table style="width: 100%; ">
                             <tr>
-                                <td style="border:none !important;padding-left:0px;padding: 0px; width:90px;">Courier Charge</td>
+                                <td style="border:none !important;padding-left:0px;padding: 0px; width:115px;">Courier (Without GST)</td>
                                 <td style="border:none !important;padding: 0px; width:90px;"></td>
-                                <td style="border:none !important;padding: 0px; text-align: right;">{{number_format($courierChargeBase, 2)}} &nbsp;</td>                            
+                                <td style="border:none !important;padding: 0px; text-align: right;">{{number_format($courierAfterGst, 2)}} &nbsp;</td>                            
                             </tr>
                         </table>
-                        <?php if($invoice->courier_charge_enabled && $courierGstAmount > 0) { ?>
-                        <table style="width: 100%; ">
-                            <tr>
-                                <td style="border:none !important;padding-left:0px;padding: 0px; width:90px;">Courier GST</td>
-                                <td style="border:none !important;padding: 0px; width:90px;">{{$totalGstRate}}%</td>
-                                <td style="border:none !important;padding: 0px; text-align: right;">{{number_format($courierGstAmount, 2)}} &nbsp;</td>                            
-                            </tr>
-                        </table>
-                        <?php } ?>
                         <?php } ?>
 
                         <table style="width: 100%;">
@@ -717,7 +720,9 @@ function numberToWordsWithCents($amount) {
                                         $roundOffValue = $invoice->round_off;
                                         echo ($roundOffValue >= 0 ? "+" : "") . number_format($roundOffValue, 2);
                                     } else {
-                                        $r_off_total = $grandTotalAfterDiscount + (($grandTotalAfterDiscount*$invoice->cgst)/100) + (($grandTotalAfterDiscount*$invoice->sgst)/100) + (($grandTotalAfterDiscount*$invoice->igst)/100) + $totalCourierWithGst;
+                                        // grandTotalAfterDiscount already includes courierBeforeGst
+                                        // Add GST amounts + courier GST + courier after GST
+                                        $r_off_total = $grandTotalAfterDiscount + (($grandTotalAfterDiscount*$invoice->cgst)/100) + (($grandTotalAfterDiscount*$invoice->sgst)/100) + (($grandTotalAfterDiscount*$invoice->igst)/100) + $courierAfterGst;
                                         $difference = round($r_off_total) - $r_off_total;
                                         echo ($difference !== 0 ? ($difference > 0 ? "+" : "") . number_format($difference, 2) : "0");
                                     }
