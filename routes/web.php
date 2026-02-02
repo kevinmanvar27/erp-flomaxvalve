@@ -53,6 +53,7 @@ Route::middleware('auth')->group(function () {
     Route::put('/parts/{id}', [SparePartController::class, 'update'])->name('parts.update');
     Route::delete('/parts/{id}', [SparePartController::class, 'destroy'])->name('parts.destroy');
     Route::post('/parts', [SparePartController::class, 'store'])->name('parts.store');
+    Route::post('/parts/{id}/copy', [SparePartController::class, 'copy'])->name('parts.copy');
 
     
     // Route to list products

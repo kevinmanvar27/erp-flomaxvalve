@@ -317,6 +317,37 @@
                 }
             });
         });
+
+        // Handle AJAX copy
+        $(document).on('click', '.btn-copy', function(e) {
+            e.preventDefault();
+
+            if (!confirm('Are you sure you want to copy this spare part?')) {
+                return;
+            }
+
+            var id = $(this).data('id');
+
+            $.ajax({
+                url: `/parts/${id}/copy`,
+                method: 'POST',
+                data: {
+                    _token: '{{ csrf_token() }}'
+                },
+                success: function(data) {
+                    if (data.success) {
+                        // Refresh DataTable
+                        $('#sparePartsTable').DataTable().ajax.reload();
+                        // Open edit modal for the new copy
+                        openEditModal(data.part.id);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    console.error('Error copying spare part:', error);
+                    alert('Error copying spare part. Please try again.');
+                }
+            });
+        });
     </script>
 
     <script>

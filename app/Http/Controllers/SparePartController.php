@@ -84,6 +84,7 @@ class SparePartController extends Controller
                 'rate' => $sparePart->rate,
                 'action' => '
                     <button class="btn btn-primary btn-sm" onclick="openEditModal('.$sparePart->id.')">Edit</button>
+                    <button class="btn btn-success btn-sm btn-copy" data-id="'.$sparePart->id.'">Copy</button>
                     <form action="'.route('parts.destroy', $sparePart->id).'" method="POST" style="display:inline;">
                         '.csrf_field().'
                         '.method_field('DELETE').'
@@ -127,5 +128,25 @@ class SparePartController extends Controller
         }
         SparePart::destroy($id);
         return response()->json(['success' => 'Spare part deleted successfully']);
+    }
+
+    public function copy($id)
+    {
+        if (!PermissionHelper::hasPermission('parts', 'write')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        $originalPart = SparePart::findOrFail($id);
+        
+        // Create a copy of the spare part
+        $newPart = $originalPart->replicate();
+        $newPart->name = $originalPart->name . ' (Copy)';
+        $newPart->qty = 0; // Reset quantity for the new copy
+        $newPart->save();
+
+        return response()->json([
+            'success' => true,
+            'part' => $newPart
+        ]);
     }
 }
