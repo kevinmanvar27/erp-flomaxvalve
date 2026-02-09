@@ -1393,4 +1393,333 @@ class SalesController extends Controller
 
         return 'data:image/' . $mimeType . ';base64,' . base64_encode($imageData);
     }
+
+    /**
+     * Display total sales report page
+     */
+    public function totalSalesReport()
+    {
+        if (!PermissionHelper::hasPermission('sales', 'read')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        $clients = StakeHolder::orderBy('name', 'asc')->get();
+        return view('sales.total_sales_report', compact('clients'));
+    }
+
+    /**
+     * Get total sales data for DataTable
+     */
+    public function getTotalSalesData(Request $request)
+    {
+        $query = Invoice::query()->with('customer');
+
+        // Filter by client
+        if ($request->filled('client_id')) {
+            $query->where('customer_id', $request->client_id);
+        }
+
+        // Filter by date range
+        if ($request->filled('date_from')) {
+            $query->where('create_date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->where('create_date', '<=', $request->date_to);
+        }
+
+        // Filter by payment status
+        if ($request->filled('payment_status')) {
+            if ($request->payment_status === 'paid') {
+                $query->whereRaw('balance <= COALESCE(received_amount, 0)');
+            } elseif ($request->payment_status === 'partial') {
+                $query->whereRaw('received_amount > 0 AND balance > COALESCE(received_amount, 0)');
+            } elseif ($request->payment_status === 'unpaid') {
+                $query->whereRaw('(received_amount IS NULL OR received_amount = 0) AND balance > 0');
+            }
+        }
+
+        // Apply search
+        if ($request->has('search') && is_array($request->input('search'))) {
+            $search = $request->input('search')['value'];
+            if (!empty($search)) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('invoice', 'like', "%{$search}%")
+                        ->orWhereHas('customer', function ($q) use ($search) {
+                            $q->where('name', 'like', "%{$search}%")
+                              ->orWhere('business_name', 'like', "%{$search}%");
+                        })
+                        ->orWhere('create_date', 'like', "%{$search}%");
+                });
+            }
+        }
+
+        // Apply sorting
+        $column = $request->input('order.0.column');
+        $direction = $request->input('order.0.dir', 'desc');
+        $direction = strtolower($direction) === 'asc' ? 'asc' : 'desc';
+        $columns = ['id', 'create_date', 'invoice', 'customer_name', 'sub_total', 'balance', 'received_amount'];
+        
+        if (isset($columns[$column])) {
+            if ($columns[$column] === 'customer_name') {
+                $query->join('stake_holders', 'invoices.customer_id', '=', 'stake_holders.id')
+                      ->orderBy('stake_holders.name', $direction)
+                      ->select('invoices.*');
+            } elseif ($columns[$column] === 'invoice') {
+                $query->orderByRaw("CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(invoice, '-', 2), '-', -1) AS UNSIGNED) {$direction}");
+            } else {
+                $query->orderBy($columns[$column], $direction);
+            }
+        } else {
+            $query->orderByRaw("CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(invoice, '-', 2), '-', -1) AS UNSIGNED) DESC");
+        }
+
+        // Clone query for counts before pagination
+        $baseQuery = Invoice::query();
+        if ($request->filled('client_id')) {
+            $baseQuery->where('customer_id', $request->client_id);
+        }
+        if ($request->filled('date_from')) {
+            $baseQuery->where('create_date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $baseQuery->where('create_date', '<=', $request->date_to);
+        }
+        if ($request->filled('payment_status')) {
+            if ($request->payment_status === 'paid') {
+                $baseQuery->whereRaw('balance <= COALESCE(received_amount, 0)');
+            } elseif ($request->payment_status === 'partial') {
+                $baseQuery->whereRaw('received_amount > 0 AND balance > COALESCE(received_amount, 0)');
+            } elseif ($request->payment_status === 'unpaid') {
+                $baseQuery->whereRaw('(received_amount IS NULL OR received_amount = 0) AND balance > 0');
+            }
+        }
+
+        $totalRecords = Invoice::count();
+        $filteredRecords = $baseQuery->count();
+
+        // Pagination
+        $length = $request->input('length', 25);
+        $start = $request->input('start', 0);
+        $data = $query->skip($start)->take($length)->get();
+
+        // Format data for DataTables
+        $formattedData = $data->map(function ($invoice, $index) use ($start) {
+            $receivedAmount = $invoice->received_amount ?? 0;
+            $pendingAmount = $invoice->balance - $receivedAmount;
+            
+            // Determine payment status
+            $statusBadge = '';
+            if ($pendingAmount <= 0) {
+                $statusBadge = '<span class="badge badge-success">Paid</span>';
+            } elseif ($receivedAmount > 0) {
+                $statusBadge = '<span class="badge badge-warning">Partial</span>';
+            } else {
+                $statusBadge = '<span class="badge badge-danger">Unpaid</span>';
+            }
+
+            // Calculate GST amounts for display
+            $gstAmount = $invoice->balance - $invoice->sub_total;
+
+            return [
+                'sl_no' => $start + $index + 1,
+                'create_date' => $invoice->create_date,
+                'invoice' => $invoice->invoice,
+                'customer_name' => $invoice->customer ? $invoice->customer->name : 'N/A',
+                'sub_total' => '₹' . number_format($invoice->sub_total, 2),
+                'gst_amount' => '₹' . number_format($gstAmount, 2),
+                'total_amount' => '₹' . number_format($invoice->balance, 2),
+                'received_amount' => '<span class="text-success">₹' . number_format($receivedAmount, 2) . '</span>',
+                'pending_amount' => '<span class="text-danger font-weight-bold">₹' . number_format($pendingAmount, 2) . '</span>',
+                'status' => $statusBadge,
+            ];
+        });
+
+        return response()->json([
+            'draw' => intval($request->input('draw')),
+            'recordsTotal' => $totalRecords,
+            'recordsFiltered' => $filteredRecords,
+            'data' => $formattedData
+        ]);
+    }
+
+    /**
+     * Get total sales summary for dashboard cards
+     */
+    public function getTotalSalesSummary(Request $request)
+    {
+        // Build base filters
+        $clientId = $request->filled('client_id') ? $request->client_id : null;
+        $dateFrom = $request->filled('date_from') ? $request->date_from : null;
+        $dateTo = $request->filled('date_to') ? $request->date_to : null;
+        $paymentStatus = $request->filled('payment_status') ? $request->payment_status : null;
+
+        // Build query with filters
+        $query = Invoice::query()
+            ->when($clientId, function($q) use ($clientId) {
+                $q->where('customer_id', $clientId);
+            })
+            ->when($dateFrom, function($q) use ($dateFrom) {
+                $q->where('create_date', '>=', $dateFrom);
+            })
+            ->when($dateTo, function($q) use ($dateTo) {
+                $q->where('create_date', '<=', $dateTo);
+            });
+
+        // Apply payment status filter
+        if ($paymentStatus === 'paid') {
+            $query->whereRaw('balance <= COALESCE(received_amount, 0)');
+        } elseif ($paymentStatus === 'partial') {
+            $query->whereRaw('received_amount > 0 AND balance > COALESCE(received_amount, 0)');
+        } elseif ($paymentStatus === 'unpaid') {
+            $query->whereRaw('(received_amount IS NULL OR received_amount = 0) AND balance > 0');
+        }
+
+        // Get summary
+        $summary = $query->selectRaw('
+            COUNT(*) as total_invoices,
+            COALESCE(SUM(sub_total), 0) as total_sub_total,
+            COALESCE(SUM(balance), 0) as total_amount,
+            COALESCE(SUM(received_amount), 0) as total_received
+        ')->first();
+
+        $totalInvoices = $summary->total_invoices ?? 0;
+        $totalSubTotal = floatval($summary->total_sub_total ?? 0);
+        $totalAmount = floatval($summary->total_amount ?? 0);
+        $totalReceived = floatval($summary->total_received ?? 0);
+        $totalPending = $totalAmount - $totalReceived;
+        $totalGst = $totalAmount - $totalSubTotal;
+
+        return response()->json([
+            'total_invoices' => $totalInvoices,
+            'total_sub_total' => $totalSubTotal,
+            'total_gst' => $totalGst,
+            'total_amount' => $totalAmount,
+            'total_received' => $totalReceived,
+            'total_pending' => $totalPending
+        ]);
+    }
+
+    /**
+     * Export total sales data
+     */
+    public function exportTotalSales(Request $request)
+    {
+        $query = Invoice::query()->with('customer');
+
+        // Filter by client
+        if ($request->filled('client_id')) {
+            $query->where('customer_id', $request->client_id);
+        }
+
+        // Filter by date range
+        if ($request->filled('date_from')) {
+            $query->where('create_date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->where('create_date', '<=', $request->date_to);
+        }
+
+        // Filter by payment status
+        if ($request->filled('payment_status')) {
+            if ($request->payment_status === 'paid') {
+                $query->whereRaw('balance <= COALESCE(received_amount, 0)');
+            } elseif ($request->payment_status === 'partial') {
+                $query->whereRaw('received_amount > 0 AND balance > COALESCE(received_amount, 0)');
+            } elseif ($request->payment_status === 'unpaid') {
+                $query->whereRaw('(received_amount IS NULL OR received_amount = 0) AND balance > 0');
+            }
+        }
+
+        $invoices = $query->orderByRaw("CAST(SUBSTRING_INDEX(SUBSTRING_INDEX(invoice, '-', 2), '-', -1) AS UNSIGNED) DESC")->get();
+
+        // Calculate totals
+        $totalSubTotal = $invoices->sum('sub_total');
+        $totalAmount = $invoices->sum('balance');
+        $totalReceived = $invoices->sum('received_amount') ?? 0;
+        $totalPending = $totalAmount - $totalReceived;
+        $totalGst = $totalAmount - $totalSubTotal;
+
+        // Get client info for filename and header
+        $filterClient = $request->client_id ? StakeHolder::find($request->client_id) : null;
+        $clientNameSlug = $filterClient ? '_' . preg_replace('/[^A-Za-z0-9]/', '_', $filterClient->name) : '';
+
+        if ($request->export === 'pdf') {
+            $pdf = Pdf::loadView('sales.total_sales_pdf', [
+                'invoices' => $invoices,
+                'totalSubTotal' => $totalSubTotal,
+                'totalGst' => $totalGst,
+                'totalAmount' => $totalAmount,
+                'totalReceived' => $totalReceived,
+                'totalPending' => $totalPending,
+                'filterClient' => $filterClient,
+                'dateFrom' => $request->date_from,
+                'dateTo' => $request->date_to,
+                'paymentStatus' => $request->payment_status
+            ]);
+            
+            // Set paper size to A4 landscape for better readability
+            $pdf->setPaper('a4', 'landscape');
+            
+            return $pdf->download('total_sales_report' . $clientNameSlug . '_' . date('Y-m-d') . '.pdf');
+        }
+        
+        // Excel export (CSV format)
+        $filename = 'total_sales_report' . $clientNameSlug . '_' . date('Y-m-d') . '.csv';
+        $headers = [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => "attachment; filename=\"$filename\"",
+        ];
+
+        $callback = function() use ($invoices, $totalSubTotal, $totalGst, $totalAmount, $totalReceived, $totalPending, $filterClient) {
+            $file = fopen('php://output', 'w');
+            
+            // Add BOM for Excel UTF-8 compatibility
+            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
+            
+            // Client Name on top (if filtered)
+            if ($filterClient) {
+                fputcsv($file, ['Client Name: ' . $filterClient->name . ($filterClient->business_name ? ' (' . $filterClient->business_name . ')' : '')]);
+                fputcsv($file, []);
+            }
+            
+            // Header row
+            fputcsv($file, ['SL No', 'Invoice Date', 'Invoice Number', 'Client Name', 'Sub Total', 'GST Amount', 'Total Amount', 'Received Amount', 'Pending Amount', 'Status']);
+            
+            // Data rows
+            foreach ($invoices as $index => $invoice) {
+                $receivedAmount = $invoice->received_amount ?? 0;
+                $pendingAmount = $invoice->balance - $receivedAmount;
+                $gstAmount = $invoice->balance - $invoice->sub_total;
+                
+                // Determine status
+                $status = 'Unpaid';
+                if ($pendingAmount <= 0) {
+                    $status = 'Paid';
+                } elseif ($receivedAmount > 0) {
+                    $status = 'Partial';
+                }
+                
+                fputcsv($file, [
+                    $index + 1,
+                    $invoice->create_date,
+                    $invoice->invoice,
+                    $invoice->customer ? $invoice->customer->name : 'N/A',
+                    $invoice->sub_total,
+                    $gstAmount,
+                    $invoice->balance,
+                    $receivedAmount,
+                    $pendingAmount,
+                    $status
+                ]);
+            }
+            
+            // Total row
+            fputcsv($file, []);
+            fputcsv($file, ['', '', '', 'Grand Total:', $totalSubTotal, $totalGst, $totalAmount, $totalReceived, $totalPending, '']);
+            
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
 }
