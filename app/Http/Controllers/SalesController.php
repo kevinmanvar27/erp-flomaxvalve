@@ -795,6 +795,8 @@ class SalesController extends Controller
             }
 
             $invoice->received_amount = round($totalReceived, 2);
+            $invoice->payment_date = now()->format('Y-m-d');
+            $invoice->payment_user_code = auth()->user()->usercode;
             $invoice->save();
 
             return response()->json([
@@ -1412,7 +1414,7 @@ class SalesController extends Controller
      */
     public function getTotalSalesData(Request $request)
     {
-        $query = Invoice::query()->with('customer');
+        $query = Invoice::query()->with(['customer', 'paymentUser']);
 
         // Filter by client
         if ($request->filled('client_id')) {
@@ -1530,6 +1532,8 @@ class SalesController extends Controller
                 'total_amount' => '₹' . number_format($invoice->balance, 2),
                 'received_amount' => '<span class="text-success">₹' . number_format($receivedAmount, 2) . '</span>',
                 'pending_amount' => '<span class="text-danger font-weight-bold">₹' . number_format($pendingAmount, 2) . '</span>',
+                'payment_date' => $invoice->payment_date ? date('d-m-Y', strtotime($invoice->payment_date)) : '<span class="text-muted">-</span>',
+                'payment_user_code' => $invoice->payment_user_code ? '<span class="badge badge-info">' . $invoice->payment_user_code . '</span>' : '<span class="text-muted">-</span>',
                 'status' => $statusBadge,
             ];
         });
@@ -1604,7 +1608,7 @@ class SalesController extends Controller
      */
     public function exportTotalSales(Request $request)
     {
-        $query = Invoice::query()->with('customer');
+        $query = Invoice::query()->with(['customer', 'paymentUser']);
 
         // Filter by client
         if ($request->filled('client_id')) {
@@ -1683,7 +1687,7 @@ class SalesController extends Controller
             }
             
             // Header row
-            fputcsv($file, ['SL No', 'Invoice Date', 'Invoice Number', 'Client Name', 'Sub Total', 'GST Amount', 'Total Amount', 'Received Amount', 'Pending Amount', 'Status']);
+            fputcsv($file, ['SL No', 'Invoice Date', 'Invoice Number', 'Client Name', 'Sub Total', 'GST Amount', 'Total Amount', 'Received Amount', 'Pending Amount', 'Payment Date', 'Payment User Code', 'Status']);
             
             // Data rows
             foreach ($invoices as $index => $invoice) {
@@ -1709,13 +1713,15 @@ class SalesController extends Controller
                     $invoice->balance,
                     $receivedAmount,
                     $pendingAmount,
+                    $invoice->payment_date ? date('d-m-Y', strtotime($invoice->payment_date)) : '-',
+                    $invoice->payment_user_code ?? '-',
                     $status
                 ]);
             }
             
             // Total row
             fputcsv($file, []);
-            fputcsv($file, ['', '', '', 'Grand Total:', $totalSubTotal, $totalGst, $totalAmount, $totalReceived, $totalPending, '']);
+            fputcsv($file, ['', '', '', 'Grand Total:', $totalSubTotal, $totalGst, $totalAmount, $totalReceived, $totalPending, '', '', '']);
             
             fclose($file);
         };

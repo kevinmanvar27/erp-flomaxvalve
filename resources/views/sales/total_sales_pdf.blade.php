@@ -350,17 +350,19 @@
             <thead>
                 <tr>
                     <th class="text-center" style="width: 4%;">SL</th>
-                    <th style="width: 9%;">Date</th>
-                    <th style="width: 13%;">Invoice No.</th>
+                    <th style="width: 8%;">Date</th>
+                    <th style="width: 12%;">Invoice No.</th>
                     @if(!$filterClient)
-                    <th style="width: 14%;">Client Name</th>
+                    <th style="width: 12%;">Client Name</th>
                     @endif
-                    <th class="text-right" style="width: 11%;">Sub Total</th>
-                    <th class="text-right" style="width: 9%;">GST</th>
-                    <th class="text-right" style="width: 11%;">Total</th>
-                    <th class="text-right" style="width: 11%;">Received</th>
-                    <th class="text-right" style="width: 11%;">Pending</th>
-                    <th class="text-center" style="width: 8%;">Status</th>
+                    <th class="text-right" style="width: 9%;">Sub Total</th>
+                    <th class="text-right" style="width: 8%;">GST</th>
+                    <th class="text-right" style="width: 9%;">Total</th>
+                    <th class="text-right" style="width: 9%;">Received</th>
+                    <th class="text-right" style="width: 9%;">Pending</th>
+                    <th style="width: 8%;">Pay Date</th>
+                    <th class="text-center" style="width: 6%;">User</th>
+                    <th class="text-center" style="width: 6%;">Status</th>
                 </tr>
             </thead>
             <tbody>
@@ -392,6 +394,8 @@
                         <td class="text-right">Rs. {{ number_format($invoice->balance, 2) }}</td>
                         <td class="text-right amount-received">Rs. {{ number_format($receivedAmount, 2) }}</td>
                         <td class="text-right amount-pending">Rs. {{ number_format($pendingAmount, 2) }}</td>
+                        <td>{{ $invoice->payment_date ? date('d-m-Y', strtotime($invoice->payment_date)) : '-' }}</td>
+                        <td class="text-center">{{ $invoice->payment_user_code ?? '-' }}</td>
                         <td class="text-center"><span class="status-badge {{ $statusClass }}">{{ $statusText }}</span></td>
                     </tr>
                 @endforeach
@@ -404,6 +408,8 @@
                     <td class="text-right"><strong>Rs. {{ number_format($totalAmount, 2) }}</strong></td>
                     <td class="text-right amount-received"><strong>Rs. {{ number_format($totalReceived, 2) }}</strong></td>
                     <td class="text-right amount-pending"><strong>Rs. {{ number_format($totalPending, 2) }}</strong></td>
+                    <td></td>
+                    <td></td>
                     <td></td>
                 </tr>
             </tfoot>

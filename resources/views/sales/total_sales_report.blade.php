@@ -183,6 +183,8 @@
                                             <th>Total Amount</th>
                                             <th>Received</th>
                                             <th>Pending</th>
+                                            <th>Payment Date</th>
+                                            <th>Payment User</th>
                                             <th>Status</th>
                                         </tr>
                                     </thead>
@@ -196,6 +198,8 @@
                                             <th id="footer_total">₹0.00</th>
                                             <th id="footer_received">₹0.00</th>
                                             <th id="footer_pending">₹0.00</th>
+                                            <th></th>
+                                            <th></th>
                                             <th></th>
                                         </tr>
                                     </tfoot>
@@ -262,6 +266,8 @@
                         { data: 'total_amount', name: 'balance' },
                         { data: 'received_amount', name: 'received_amount' },
                         { data: 'pending_amount', name: 'pending_amount', orderable: false },
+                        { data: 'payment_date', name: 'payment_date' },
+                        { data: 'payment_user_code', name: 'payment_user_code' },
                         { data: 'status', name: 'status', orderable: false, searchable: false }
                     ],
                     order: [[2, 'desc']],

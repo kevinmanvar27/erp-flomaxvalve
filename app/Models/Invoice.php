@@ -18,6 +18,8 @@ class Invoice extends Model
         'status',
         'sub_total',
         'received_amount',
+        'payment_date',
+        'payment_user_code',
         'discount',
         'balance',
         'customer_id',
@@ -41,6 +43,14 @@ class Invoice extends Model
     public function customer()
     {
         return $this->belongsTo(StakeHolder::class, 'customer_id', 'id');
+    }
+
+    /**
+     * Get the user who received the payment
+     */
+    public function paymentUser()
+    {
+        return $this->belongsTo(User::class, 'payment_user_code', 'usercode');
     }
 
     /**
