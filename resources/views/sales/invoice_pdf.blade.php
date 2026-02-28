@@ -645,17 +645,17 @@ function numberToWordsWithCents($amount) {
                             </tr>
                         </table> 
                     </td>
-                    <td colspan="3" style="padding: 0px 0px 0px 4px;border: none;">
-                        <span>Taxable Amount: {{number_format($grandTotalAfterDiscount, 2)}}</span>
+                    <td colspan="3" style="padding: 4px;border-left: 1px solid black;border-right: 1px solid black;border-bottom: 1px solid black;">
+                        <div style="font-size: 7pt;font-weight: bold;">Taxable Amount: {{number_format($grandTotalAfterDiscount, 2)}}</div>
                         
                         
                         <?php if($invoice->cgst != 0 ) {  ?>
-                        <table style="width: 100%;">
+                        <table style="width: 100%;border-collapse: collapse;">
                             <tr>
-                                <td style="border:none !important;padding-left:0px;padding: 0px;  width:90px;">CGST</td>
-                                <td style="border:none !important;padding: 0px; width:90px;">{{$invoice->cgst}}%</td>
-                                <td style="border:none !important;padding: 0px; text-align: right;">
-                                    {{number_format(($grandTotalAfterDiscount*$invoice->cgst)/100,2)}} &nbsp;
+                                <td style="border:none !important;padding: 2px 0px;width:35%;">CGST</td>
+                                <td style="border:none !important;padding: 2px 0px;width:25%;">{{$invoice->cgst}}%</td>
+                                <td style="border:none !important;padding: 2px 0px;width:40%;text-align: right;">
+                                    {{number_format(($grandTotalAfterDiscount*$invoice->cgst)/100,2)}}
                                 </td>
                             </tr>
                         </table>
@@ -673,14 +673,14 @@ function numberToWordsWithCents($amount) {
                             </tr>
                         </table> 
                     </td>
-                    <td colspan="3" style="padding: 0px 0px 0px 4px;border: none; border-bottom: 1px solid white;">
+                    <td colspan="3" style="padding: 4px;border-left: 1px solid black;border-right: 1px solid black;border-bottom: 1px solid white;">
                         <?php if( $invoice->sgst != 0 ) { ?>
-                        <table style="width: 100%; ">
+                        <table style="width: 100%;border-collapse: collapse;">
                             <tr>
-                                <td style="border:none !important;padding-left:0px;padding: 0px; width:90px;">SGST</td>
-                                <td style="border:none !important;padding: 0px; width:90px;">{{$invoice->sgst}}%</td>
-                                <td style="border:none !important;padding: 0px; text-align: right;">
-                                    {{number_format(($grandTotalAfterDiscount*$invoice->sgst)/100,2)}} &nbsp;
+                                <td style="border:none !important;padding: 2px 0px;width:35%;">SGST</td>
+                                <td style="border:none !important;padding: 2px 0px;width:25%;">{{$invoice->sgst}}%</td>
+                                <td style="border:none !important;padding: 2px 0px;width:40%;text-align: right;">
+                                    {{number_format(($grandTotalAfterDiscount*$invoice->sgst)/100,2)}}
                                 </td>                            
                             </tr>
                         </table>
@@ -688,32 +688,31 @@ function numberToWordsWithCents($amount) {
                         
                         
                         <?php if( $invoice->igst != 0 ) { ?>
-                        <table style="width: 100%; ">
+                        <table style="width: 100%;border-collapse: collapse;">
                             <tr>
-                                <td style="border:none !important;padding-left:0px;padding: 0px; width:90px;">IGST</td>
-                                <td style="border:none !important;padding: 0px; width:90px;">{{$invoice->igst}}%</td>
-                                <td style="border:none !important;padding: 0px; text-align: right;">
-                                    {{number_format(($grandTotalAfterDiscount*$invoice->igst)/100,2)}} &nbsp;
+                                <td style="border:none !important;padding: 2px 0px;width:35%;">IGST</td>
+                                <td style="border:none !important;padding: 2px 0px;width:25%;">{{$invoice->igst}}%</td>
+                                <td style="border:none !important;padding: 2px 0px;width:40%;text-align: right;">
+                                    {{number_format(($grandTotalAfterDiscount*$invoice->igst)/100,2)}}
                                 </td>                            
                             </tr>
                         </table>
                         <?php } ?>
                         
                         <?php if($courierAfterGst > 0) { ?>
-                        <table style="width: 100%; ">
+                        <table style="width: 100%;border-collapse: collapse;">
                             <tr>
-                                <td style="border:none !important;padding-left:0px;padding: 0px; width:115px;">Courier (Without GST)</td>
-                                <td style="border:none !important;padding: 0px; width:90px;"></td>
-                                <td style="border:none !important;padding: 0px; text-align: right;">{{number_format($courierAfterGst, 2)}} &nbsp;</td>                            
+                                <td style="border:none !important;padding: 2px 0px;width:60%;">Courier (Without GST)</td>
+                                <td style="border:none !important;padding: 2px 0px;width:40%;text-align: right;">{{number_format($courierAfterGst, 2)}}</td>                            
                             </tr>
                         </table>
                         <?php } ?>
 
-                        <table style="width: 100%;">
+                        <table style="width: 100%;border-collapse: collapse;">
                           
                             <tr>
-                                <td colspan="2" style="border:none !important;padding:0px;padding-top:4px;  width:90px;">Round Off</td>
-                                <td style="border:none !important;padding: 0px;padding-top:4px;text-align: right;">
+                                <td colspan="2" style="border:none !important;padding:2px 0px;padding-top:4px;width:60%;">Round Off</td>
+                                <td style="border:none !important;padding: 2px 0px;padding-top:4px;width:40%;text-align: right;">
                                     <?php
                                     // Use saved round_off value if available, otherwise calculate
                                     if (isset($invoice->round_off) && $invoice->round_off != 0) {
@@ -726,7 +725,7 @@ function numberToWordsWithCents($amount) {
                                         $difference = round($r_off_total) - $r_off_total;
                                         echo ($difference !== 0 ? ($difference > 0 ? "+" : "") . number_format($difference, 2) : "0");
                                     }
-                                    ?>&nbsp;
+                                    ?>
                                 </td>
                             </tr>
                         </table>
@@ -740,8 +739,8 @@ function numberToWordsWithCents($amount) {
                             </tr>
                         </table> 
                     </td>
-                    <td colspan="3" style="padding: 0px;">
-                        <table style="width: 100%;border-top:1px solid white; ">
+                    <td colspan="3" style="padding: 4px;border-left: 1px solid black;border-right: 1px solid black;">
+                        <table style="width: 100%;border-top:1px solid white;border-collapse: collapse;">
                             <tr>
                                 <td style="border:none !important;padding:0px;padding-top:4px;"></td>
                                 <td style="border:none !important;padding:0px;padding-top:4px;"></td>
@@ -759,12 +758,11 @@ function numberToWordsWithCents($amount) {
                             </tr>
                          
                         </table>
-                        <table style="width: 100%; background-color: rgb(216, 216, 216);border-top: 2px solid;">
+                        <table style="width: 100%;background-color: rgb(216, 216, 216);border-top: 2px solid;border-collapse: collapse;">
                           
                             <tr>
-                                <td style="border:none !important;padding: 3px 19px 3px 7px;line-height: 20px;">Grand Total</td>
-                                <td style="border:none !important;"></td>
-                                <td style="border:none !important; font-size: 18px;text-align: right;">{{ round($totalGst) }} &nbsp;</td>
+                                <td style="border:none !important;padding: 3px 7px;line-height: 20px;width:60%;">Grand Total</td>
+                                <td style="border:none !important;width:40%;font-size: 18px;text-align: right;padding-right: 4px;">{{ round($totalGst) }}</td>
                             </tr>
                         </table>
                     </td>
