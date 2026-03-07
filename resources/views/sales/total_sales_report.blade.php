@@ -178,6 +178,7 @@
                                             <th>Invoice Date</th>
                                             <th>Invoice Number</th>
                                             <th>Client Name</th>
+                                            <th>GST Number</th>
                                             <th>Sub Total</th>
                                             <th>GST Amount</th>
                                             <th>Total Amount</th>
@@ -192,7 +193,7 @@
                                     </tbody>
                                     <tfoot>
                                         <tr class="bg-light font-weight-bold">
-                                            <th colspan="4" class="text-right">Grand Total:</th>
+                                            <th colspan="5" class="text-right">Grand Total:</th>
                                             <th id="footer_sub_total">₹0.00</th>
                                             <th id="footer_gst">₹0.00</th>
                                             <th id="footer_total">₹0.00</th>
@@ -261,6 +262,7 @@
                         { data: 'create_date', name: 'create_date' },
                         { data: 'invoice', name: 'invoice' },
                         { data: 'customer_name', name: 'customer_name' },
+                        { data: 'gst_number', name: 'gst_number', orderable: false },
                         { data: 'sub_total', name: 'sub_total' },
                         { data: 'gst_amount', name: 'gst_amount', orderable: false },
                         { data: 'total_amount', name: 'balance' },

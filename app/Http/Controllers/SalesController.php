@@ -1527,6 +1527,7 @@ class SalesController extends Controller
                 'create_date' => $invoice->create_date,
                 'invoice' => $invoice->invoice,
                 'customer_name' => $invoice->customer ? $invoice->customer->name : 'N/A',
+                'gst_number' => $invoice->customer && $invoice->customer->GSTIN ? $invoice->customer->GSTIN : '<span class="text-muted">-</span>',
                 'sub_total' => '₹' . number_format($invoice->sub_total, 2),
                 'gst_amount' => '₹' . number_format($gstAmount, 2),
                 'total_amount' => '₹' . number_format($invoice->balance, 2),
@@ -1687,7 +1688,7 @@ class SalesController extends Controller
             }
             
             // Header row
-            fputcsv($file, ['SL No', 'Invoice Date', 'Invoice Number', 'Client Name', 'Sub Total', 'GST Amount', 'Total Amount', 'Received Amount', 'Pending Amount', 'Payment Date', 'Payment User Code', 'Status']);
+            fputcsv($file, ['SL No', 'Invoice Date', 'Invoice Number', 'Client Name', 'GST Number', 'Sub Total', 'GST Amount', 'Total Amount', 'Received Amount', 'Pending Amount', 'Payment Date', 'Payment User Code', 'Status']);
             
             // Data rows
             foreach ($invoices as $index => $invoice) {
@@ -1708,6 +1709,7 @@ class SalesController extends Controller
                     $invoice->create_date,
                     $invoice->invoice,
                     $invoice->customer ? $invoice->customer->name : 'N/A',
+                    $invoice->customer && $invoice->customer->GSTIN ? $invoice->customer->GSTIN : '-',
                     $invoice->sub_total,
                     $gstAmount,
                     $invoice->balance,
@@ -1721,7 +1723,7 @@ class SalesController extends Controller
             
             // Total row
             fputcsv($file, []);
-            fputcsv($file, ['', '', '', 'Grand Total:', $totalSubTotal, $totalGst, $totalAmount, $totalReceived, $totalPending, '', '', '']);
+            fputcsv($file, ['', '', '', '', 'Grand Total:', $totalSubTotal, $totalGst, $totalAmount, $totalReceived, $totalPending, '', '', '']);
             
             fclose($file);
         };

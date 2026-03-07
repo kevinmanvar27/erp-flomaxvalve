@@ -353,7 +353,8 @@
                     <th style="width: 8%;">Date</th>
                     <th style="width: 12%;">Invoice No.</th>
                     @if(!$filterClient)
-                    <th style="width: 12%;">Client Name</th>
+                    <th style="width: 10%;">Client Name</th>
+                    <th style="width: 10%;">GST Number</th>
                     @endif
                     <th class="text-right" style="width: 9%;">Sub Total</th>
                     <th class="text-right" style="width: 8%;">GST</th>
@@ -388,6 +389,7 @@
                         <td>{{ $invoice->invoice }}</td>
                         @if(!$filterClient)
                         <td>{{ $invoice->customer ? $invoice->customer->name : 'N/A' }}</td>
+                        <td>{{ $invoice->customer && $invoice->customer->GSTIN ? $invoice->customer->GSTIN : '-' }}</td>
                         @endif
                         <td class="text-right">Rs. {{ number_format($invoice->sub_total, 2) }}</td>
                         <td class="text-right">Rs. {{ number_format($gstAmount, 2) }}</td>
@@ -402,7 +404,7 @@
             </tbody>
             <tfoot>
                 <tr>
-                    <td colspan="{{ $filterClient ? 3 : 4 }}" class="text-right"><strong>Grand Total:</strong></td>
+                    <td colspan="{{ $filterClient ? 3 : 5 }}" class="text-right"><strong>Grand Total:</strong></td>
                     <td class="text-right"><strong>Rs. {{ number_format($totalSubTotal, 2) }}</strong></td>
                     <td class="text-right"><strong>Rs. {{ number_format($totalGst, 2) }}</strong></td>
                     <td class="text-right"><strong>Rs. {{ number_format($totalAmount, 2) }}</strong></td>
