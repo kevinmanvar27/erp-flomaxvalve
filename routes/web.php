@@ -89,6 +89,10 @@ Route::middleware('auth')->group(function () {
     Route::get('sales/total-report/data', [SalesController::class, 'getTotalSalesData'])->name('sales.totalReport.data');
     Route::get('sales/total-report/summary', [SalesController::class, 'getTotalSalesSummary'])->name('sales.totalReport.summary');
     Route::get('sales/total-report/export', [SalesController::class, 'exportTotalSales'])->name('sales.totalReport.export');
+    Route::get('sales/payment-received', [SalesController::class, 'paymentReceivedReport'])->name('sales.paymentReceived');
+    Route::get('sales/payment-received/data', [SalesController::class, 'getPaymentReceivedData'])->name('sales.paymentReceived.data');
+    Route::get('sales/payment-received/summary', [SalesController::class, 'getPaymentReceivedSummary'])->name('sales.paymentReceived.summary');
+    Route::get('sales/payment-received/export', [SalesController::class, 'exportPaymentReceived'])->name('sales.paymentReceived.export');
     Route::resource('sales', SalesController::class);
     Route::get('/sales/create', [SalesController::class, 'create'])->name('sales.create');
     Route::get('sales/download/{id}', [SalesController::class, 'downloadPDF'])->name('sales.download');

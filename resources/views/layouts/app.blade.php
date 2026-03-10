@@ -319,7 +319,7 @@
 
                         @if (isset($permissions['sales']['read']) && $permissions['sales']['read'] == 1)
                             <li
-                                class="nav-item {{ request()->routeIs('sales.index', 'sales.create', 'sales.show', 'sales.edit', 'sales.pending', 'sales.totalReport') ? 'menu-is-opening menu-open' : '' }}">
+                                class="nav-item {{ request()->routeIs('sales.index', 'sales.create', 'sales.show', 'sales.edit', 'sales.pending', 'sales.totalReport', 'sales.paymentReceived') ? 'menu-is-opening menu-open' : '' }}">
                                 <a href="#" class="nav-link">
                                     <i class="nav-icon fas fa-file-invoice"></i>
                                     <p>
@@ -328,7 +328,7 @@
                                     </p>
                                 </a>
                                 <ul class="nav nav-treeview"
-                                    style="display: {{ request()->routeIs('sales.index', 'sales.create', 'sales.show', 'sales.edit', 'sales.pending', 'sales.totalReport') ? 'block' : 'none' }};">
+                                    style="display: {{ request()->routeIs('sales.index', 'sales.create', 'sales.show', 'sales.edit', 'sales.pending', 'sales.totalReport', 'sales.paymentReceived') ? 'block' : 'none' }};">
                                     <li class="nav-item">
                                         <a href="{{ route('sales.create') }}" class="nav-link">
                                             <i class="far fa-circle nav-icon"></i>
@@ -351,6 +351,12 @@
                                         <a href="{{ route('sales.totalReport') }}" class="nav-link {{ request()->routeIs('sales.totalReport') ? 'active' : '' }}">
                                             <i class="far fa-circle nav-icon"></i>
                                             <p>Total Sales Report</p>
+                                        </a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a href="{{ route('sales.paymentReceived') }}" class="nav-link {{ request()->routeIs('sales.paymentReceived') ? 'active' : '' }}">
+                                            <i class="far fa-circle nav-icon"></i>
+                                            <p>Payment Received Report</p>
                                         </a>
                                     </li>
                                 </ul>

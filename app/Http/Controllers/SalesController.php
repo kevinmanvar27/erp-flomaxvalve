@@ -1730,4 +1730,269 @@ class SalesController extends Controller
 
         return response()->stream($callback, 200, $headers);
     }
+
+    /**
+     * Display payment received report page
+     */
+    public function paymentReceivedReport()
+    {
+        if (!PermissionHelper::hasPermission('sales', 'read')) {
+            abort(403, 'Unauthorized action.');
+        }
+
+        $clients = StakeHolder::orderBy('name', 'asc')->get();
+        return view('sales.payment_received_report', compact('clients'));
+    }
+
+    /**
+     * Get payment received data for DataTable
+     */
+    public function getPaymentReceivedData(Request $request)
+    {
+        $query = Invoice::query()
+            ->with(['customer', 'paymentUser'])
+            ->whereNotNull('payment_date')
+            ->where('received_amount', '>', 0);
+
+        // Filter by client
+        if ($request->filled('client_id')) {
+            $query->where('customer_id', $request->client_id);
+        }
+
+        // Filter by payment date range (this is the key difference - filtering by payment_date, not create_date)
+        if ($request->filled('date_from')) {
+            $query->where('payment_date', '>=', $request->date_from);
+        }
+        if ($request->filled('date_to')) {
+            $query->where('payment_date', '<=', $request->date_to);
+        }
+
+        // Apply search
+        if ($request->has('search') && is_array($request->input('search'))) {
+            $search = $request->input('search')['value'];
+            if (!empty($search)) {
+                $query->where(function ($q) use ($search) {
+                    $q->where('invoice', 'like', "%{$search}%")
+                        ->orWhereHas('customer', function ($q) use ($search) {
+                            $q->where('name', 'like', "%{$search}%")
+                              ->orWhere('business_name', 'like', "%{$search}%");
+                        })
+                        ->orWhere('payment_date', 'like', "%{$search}%")
+                        ->orWhere('payment_user_code', 'like', "%{$search}%");
+                });
+            }
+        }
+
+        // Sorting
+        $orderColumnIndex = $request->input('order.0.column', 0);
+        $orderDirection = $request->input('order.0.dir', 'desc');
+        $columns = ['id', 'payment_date', 'invoice', 'customer_id', 'sub_total', 'balance', 'received_amount'];
+        
+        if (isset($columns[$orderColumnIndex])) {
+            $query->orderBy($columns[$orderColumnIndex], $orderDirection);
+        } else {
+            $query->orderBy('payment_date', 'desc');
+        }
+
+        // Get total and filtered counts
+        $totalRecords = Invoice::whereNotNull('payment_date')->where('received_amount', '>', 0)->count();
+        $filteredRecords = $query->count();
+
+        // Pagination
+        $length = $request->input('length', 25);
+        $start = $request->input('start', 0);
+        $data = $query->skip($start)->take($length)->get();
+
+        // Format data for DataTables
+        $formattedData = $data->map(function ($invoice, $index) use ($start) {
+            $receivedAmount = $invoice->received_amount ?? 0;
+            $pendingAmount = $invoice->balance - $receivedAmount;
+            
+            // Determine payment status
+            $statusBadge = '';
+            if ($pendingAmount <= 0) {
+                $statusBadge = '<span class="badge badge-success">Fully Paid</span>';
+            } else {
+                $statusBadge = '<span class="badge badge-warning">Partial Payment</span>';
+            }
+
+            // Calculate GST amounts for display
+            $gstAmount = $invoice->balance - $invoice->sub_total;
+
+            return [
+                'sl_no' => $start + $index + 1,
+                'payment_date' => date('d-m-Y', strtotime($invoice->payment_date)),
+                'invoice_date' => $invoice->create_date,
+                'invoice' => $invoice->invoice,
+                'customer_name' => $invoice->customer ? $invoice->customer->name : 'N/A',
+                'gst_number' => $invoice->customer && $invoice->customer->GSTIN ? $invoice->customer->GSTIN : '<span class="text-muted">-</span>',
+                'sub_total' => '₹' . number_format($invoice->sub_total, 2),
+                'gst_amount' => '₹' . number_format($gstAmount, 2),
+                'total_amount' => '₹' . number_format($invoice->balance, 2),
+                'received_amount' => '<span class="text-success font-weight-bold">₹' . number_format($receivedAmount, 2) . '</span>',
+                'pending_amount' => $pendingAmount > 0 ? '<span class="text-danger">₹' . number_format($pendingAmount, 2) . '</span>' : '<span class="text-muted">₹0.00</span>',
+                'payment_user_code' => $invoice->paymentUser ? '<span class="badge badge-info">' . $invoice->paymentUser->name . ' (' . $invoice->payment_user_code . ')</span>' : '<span class="text-muted">-</span>',
+                'status' => $statusBadge,
+            ];
+        });
+
+        return response()->json([
+            'draw' => intval($request->input('draw')),
+            'recordsTotal' => $totalRecords,
+            'recordsFiltered' => $filteredRecords,
+            'data' => $formattedData
+        ]);
+    }
+
+    /**
+     * Get payment received summary for dashboard cards
+     */
+    public function getPaymentReceivedSummary(Request $request)
+    {
+        // Build base filters
+        $clientId = $request->filled('client_id') ? $request->client_id : null;
+        $dateFrom = $request->filled('date_from') ? $request->date_from : null;
+        $dateTo = $request->filled('date_to') ? $request->date_to : null;
+
+        // Build query with filters - filtering by payment_date
+        $query = Invoice::query()
+            ->whereNotNull('payment_date')
+            ->where('received_amount', '>', 0)
+            ->when($clientId, function($q) use ($clientId) {
+                $q->where('customer_id', $clientId);
+            })
+            ->when($dateFrom, function($q) use ($dateFrom) {
+                $q->where('payment_date', '>=', $dateFrom);
+            })
+            ->when($dateTo, function($q) use ($dateTo) {
+                $q->where('payment_date', '<=', $dateTo);
+            });
+
+        // Get summary
+        $summary = $query->selectRaw('
+            COUNT(*) as total_payments,
+            COALESCE(SUM(sub_total), 0) as total_sub_total,
+            COALESCE(SUM(balance), 0) as total_invoice_amount,
+            COALESCE(SUM(received_amount), 0) as total_received
+        ')->first();
+
+        $totalPayments = $summary->total_payments ?? 0;
+        $totalSubTotal = floatval($summary->total_sub_total ?? 0);
+        $totalInvoiceAmount = floatval($summary->total_invoice_amount ?? 0);
+        $totalReceived = floatval($summary->total_received ?? 0);
+        $totalGst = $totalInvoiceAmount - $totalSubTotal;
+
+        return response()->json([
+            'total_payments' => $totalPayments,
+            'total_sub_total' => $totalSubTotal,
+            'total_gst' => $totalGst,
+            'total_invoice_amount' => $totalInvoiceAmount,
+            'total_received' => $totalReceived,
+        ]);
+    }
+
+    /**
+     * Export payment received report to CSV
+     */
+    public function exportPaymentReceived(Request $request)
+    {
+        // Build base filters
+        $clientId = $request->filled('client_id') ? $request->client_id : null;
+        $dateFrom = $request->filled('date_from') ? $request->date_from : null;
+        $dateTo = $request->filled('date_to') ? $request->date_to : null;
+
+        // Build query with filters
+        $query = Invoice::query()
+            ->with(['customer', 'paymentUser'])
+            ->whereNotNull('payment_date')
+            ->where('received_amount', '>', 0)
+            ->when($clientId, function($q) use ($clientId) {
+                $q->where('customer_id', $clientId);
+            })
+            ->when($dateFrom, function($q) use ($dateFrom) {
+                $q->where('payment_date', '>=', $dateFrom);
+            })
+            ->when($dateTo, function($q) use ($dateTo) {
+                $q->where('payment_date', '<=', $dateTo);
+            })
+            ->orderBy('payment_date', 'desc');
+
+        $invoices = $query->get();
+
+        // Calculate totals
+        $totalSubTotal = $invoices->sum('sub_total');
+        $totalAmount = $invoices->sum('balance');
+        $totalReceived = $invoices->sum('received_amount');
+        $totalGst = $totalAmount - $totalSubTotal;
+
+        // Get filter client name
+        $filterClient = $clientId ? StakeHolder::find($clientId)->name : 'All Clients';
+
+        // Generate CSV
+        $fileName = 'payment_received_report_' . date('Y-m-d_His') . '.csv';
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => "attachment; filename=\"$fileName\"",
+            'Pragma' => 'no-cache',
+            'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
+            'Expires' => '0'
+        ];
+
+        $callback = function() use ($invoices, $totalSubTotal, $totalGst, $totalAmount, $totalReceived, $filterClient, $dateFrom, $dateTo) {
+            $file = fopen('php://output', 'w');
+            
+            // Title and filter info
+            fputcsv($file, ['Payment Received Report']);
+            fputcsv($file, ['Client: ' . $filterClient]);
+            if ($dateFrom || $dateTo) {
+                $dateRange = 'Payment Date Range: ';
+                if ($dateFrom) $dateRange .= 'From ' . date('d-m-Y', strtotime($dateFrom));
+                if ($dateTo) $dateRange .= ' To ' . date('d-m-Y', strtotime($dateTo));
+                fputcsv($file, [$dateRange]);
+            }
+            fputcsv($file, ['Generated on: ' . date('d-m-Y H:i:s')]);
+            fputcsv($file, []);
+            
+            // Headers
+            fputcsv($file, ['SL No', 'Payment Date', 'Invoice Date', 'Invoice No', 'Customer Name', 'GST Number', 'Sub Total', 'GST Amount', 'Total Amount', 'Received Amount', 'Pending Amount', 'Payment User', 'Status']);
+            
+            // Data rows
+            foreach ($invoices as $index => $invoice) {
+                $receivedAmount = $invoice->received_amount ?? 0;
+                $pendingAmount = $invoice->balance - $receivedAmount;
+                $gstAmount = $invoice->balance - $invoice->sub_total;
+                
+                $status = 'Partial Payment';
+                if ($pendingAmount <= 0) {
+                    $status = 'Fully Paid';
+                }
+                
+                $paymentUser = $invoice->paymentUser ? $invoice->paymentUser->name . ' (' . $invoice->payment_user_code . ')' : '-';
+                
+                fputcsv($file, [
+                    $index + 1,
+                    date('d-m-Y', strtotime($invoice->payment_date)),
+                    $invoice->create_date,
+                    $invoice->invoice,
+                    $invoice->customer ? $invoice->customer->name : 'N/A',
+                    $invoice->customer && $invoice->customer->GSTIN ? $invoice->customer->GSTIN : '-',
+                    $invoice->sub_total,
+                    $gstAmount,
+                    $invoice->balance,
+                    $receivedAmount,
+                    $pendingAmount,
+                    $paymentUser,
+                    $status
+                ]);
+            }
+            
+            // Total row
+            fputcsv($file, []);
+            fputcsv($file, ['', '', '', '', '', 'Grand Total:', $totalSubTotal, $totalGst, $totalAmount, $totalReceived, '', '', '']);
+            
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
 }
