@@ -176,7 +176,7 @@ class SalesController extends Controller
 
             return [
                 'id' => $start + $index + 1,
-                'create_date' => $invoice->create_date,
+                'create_date' => \Carbon\Carbon::parse($invoice->create_date)->format('d-m-Y'),
                 'invoice' => $invoice->invoice,
                 'customer_name' => $invoice->customer->name,
                 'amount' => number_format($invoice->balance, 2),
@@ -1157,7 +1157,7 @@ class SalesController extends Controller
 
             return [
                 'sl_no' => $start + $index + 1,
-                'create_date' => $invoice->create_date,
+                'create_date' => \Carbon\Carbon::parse($invoice->create_date)->format('d-m-Y'),
                 'invoice' => $invoice->invoice,
                 'customer_name' => $invoice->customer ? $invoice->customer->name : 'N/A',
                 'total_amount' => '₹' . number_format($invoice->balance, 2),
@@ -1524,7 +1524,7 @@ class SalesController extends Controller
 
             return [
                 'sl_no' => $start + $index + 1,
-                'create_date' => $invoice->create_date,
+                'create_date' => \Carbon\Carbon::parse($invoice->create_date)->format('d-m-Y'),
                 'invoice' => $invoice->invoice,
                 'customer_name' => $invoice->customer ? $invoice->customer->name : 'N/A',
                 'gst_number' => $invoice->customer && $invoice->customer->GSTIN ? $invoice->customer->GSTIN : '<span class="text-muted">-</span>',
@@ -1822,7 +1822,7 @@ class SalesController extends Controller
             return [
                 'sl_no' => $start + $index + 1,
                 'payment_date' => date('d-m-Y', strtotime($invoice->payment_date)),
-                'invoice_date' => $invoice->create_date,
+                'invoice_date' => \Carbon\Carbon::parse($invoice->create_date)->format('d-m-Y'),
                 'invoice' => $invoice->invoice,
                 'customer_name' => $invoice->customer ? $invoice->customer->name : 'N/A',
                 'gst_number' => $invoice->customer && $invoice->customer->GSTIN ? $invoice->customer->GSTIN : '<span class="text-muted">-</span>',

@@ -220,7 +220,7 @@ class JobWorkChallanController extends Controller
             'po_no' => $challan->po_no,
             'uploaded_by' => $challan->user ? $challan->user->name : 'N/A', // Access user name
             'pdf_files' => $pdfLinks, // Links to view PDFs
-            'created_at' => $challan->created_at->format('Y-m-d H:i:s'),
+            'created_at' => $challan->created_at->format('d-m-Y H:i:s'),
             'action' => $actionButtons,
         ];
     });

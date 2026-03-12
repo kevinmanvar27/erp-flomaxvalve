@@ -40,14 +40,16 @@ $totalAmount = 0;
                     </p>
                 </div>
                 <div class="secondDiv">
-                    <p style="margin: 0px; font-size: 13px; margin-left: 2px; font-weight: 700; margin-bottom: 4px;">PO Revision & Date &nbsp;&nbsp;: {{ \Carbon\Carbon::parse($invoice->create_date)->format('d-m-Y') }}</p>
-                    
                     @if($invoice->po_revision_and_date)
-                        <p style="margin: 0px; font-size: 13px; margin-left: 2px; font-weight: 700; margin-bottom: 4px;">Reason of Revision &nbsp;&nbsp;: {{$invoice->po_revision_and_date}}</p>
+                        <p style="margin: 0px; font-size: 13px; margin-left: 2px; font-weight: 700; margin-bottom: 4px;">PO Revision & Date &nbsp;&nbsp;: {{ \Carbon\Carbon::parse($invoice->po_revision_and_date)->format('d-m-Y') }}</p>
                     @endif
                     
                     @if($invoice->reason_of_revision)
-                        <p style="margin: 0px; font-size: 13px; margin-left: 2px; font-weight: 700; margin-bottom: 4px;">Quotation Ref. No. &nbsp;&nbsp;&nbsp;&nbsp;: {{$invoice->reason_of_revision}}</p>
+                        <p style="margin: 0px; font-size: 13px; margin-left: 2px; font-weight: 700; margin-bottom: 4px;">Reason of Revision &nbsp;&nbsp;: {{$invoice->reason_of_revision}}</p>
+                    @endif
+                    
+                    @if($invoice->quotation_ref_no)
+                        <p style="margin: 0px; font-size: 13px; margin-left: 2px; font-weight: 700; margin-bottom: 4px;">Quotation Ref. No. &nbsp;&nbsp;&nbsp;&nbsp;: {{$invoice->quotation_ref_no}}</p>
                     @endif
                     
                     @if($invoice->remarks)

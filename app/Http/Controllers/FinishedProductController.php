@@ -284,7 +284,7 @@ class FinishedProductController extends Controller
                 'product_name' => $finishedProduct->product->name,
                 'quantity' => $finishedProduct->quantity,
                 'created_by' => $finishedProduct->creator->name,
-                'updated_at' => $finishedProduct->updated_at->format('Y-m-d'), // 👈 Changed
+                'updated_at' => $finishedProduct->updated_at->format('d-m-Y'), // Date in day-month-year format
                 'action' => '
                     <a href="' . route('finishedProducts.show', $finishedProduct->id) . '" class="btn btn-info btn-sm"><i class="fas fa-eye"></i></a>
                     <form action="' . route('finishedProducts.destroy', $finishedProduct->id) . '" method="POST" style="display:inline;">

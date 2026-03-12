@@ -40,9 +40,9 @@ $totalAmount = 0;
                     </p>
                 </div>
                 <div class="secondDiv">
-                    <p style="margin: 0px; font-size: 13px; margin-left: 2px; font-weight: 700; margin-bottom: 4px;">PO Revision & Date &nbsp;&nbsp;: {{ \Carbon\Carbon::parse($invoice->create_date)->format('d-m-Y') }}</p>
-                    <p style="margin: 0px; font-size: 13px; margin-left: 2px; font-weight: 700; margin-bottom: 4px;">Reason of Revision &nbsp;&nbsp;: {{$invoice->po_revision_and_date}}</p>
-                    <p style="margin: 0px; font-size: 13px; margin-left: 2px; font-weight: 700; margin-bottom: 4px;">Quotation Ref. No. &nbsp;&nbsp;&nbsp;&nbsp;: {{$invoice->reason_of_revision}}</p>
+                    <p style="margin: 0px; font-size: 13px; margin-left: 2px; font-weight: 700; margin-bottom: 4px;">PO Revision & Date &nbsp;&nbsp;: {{ $invoice->po_revision_and_date ? \Carbon\Carbon::parse($invoice->po_revision_and_date)->format('d-m-Y') : '' }}</p>
+                    <p style="margin: 0px; font-size: 13px; margin-left: 2px; font-weight: 700; margin-bottom: 4px;">Reason of Revision &nbsp;&nbsp;: {{$invoice->reason_of_revision}}</p>
+                    <p style="margin: 0px; font-size: 13px; margin-left: 2px; font-weight: 700; margin-bottom: 4px;">Quotation Ref. No. &nbsp;&nbsp;&nbsp;&nbsp;: {{$invoice->quotation_ref_no}}</p>
                     <p style="margin: 0px; font-size: 13px; margin-left: 2px; font-weight: 700; margin-bottom: 4px;">Remarks &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: {{$invoice->remarks}}</p>
                     <p style="margin: 0px; font-size: 13px; margin-left: 2px; font-weight: 700; margin-bottom: 4px;">P. R. No. &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: {{$invoice->prno}}</p>
                     <p style="margin: 0px; font-size: 13px; margin-left: 2px; font-weight: 700; margin-bottom: 4px;">P. R. Date &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: {{ \Carbon\Carbon::parse($invoice->pr_date)->format('d-m-Y') }}</p>

@@ -126,7 +126,7 @@ $totalParts = 0;
                                             <td>{{ $sparePart['spare_part']['type'] }}</td>
                                             <td>{{ $sparePart['spare_part']['size'] }}</td>
                                             <td>{{ $sparePart['spare_part']['weight'] }}</td>
-                                            <td>{{ \Carbon\Carbon::parse($sparePart['spare_part']['updated_at'])->format('Y-m-d') }}</td>
+                                            <td>{{ \Carbon\Carbon::parse($sparePart['spare_part']['updated_at'])->format('d-m-Y') }}</td>
 
                                         </tr>
                                         @endforeach

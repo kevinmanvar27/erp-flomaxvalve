@@ -43,7 +43,7 @@
                                     </tr>
                                     <tr>
                                         <th>Created At:</th>
-                                        <td>{{ $finishedProduct->updated_at->format('Y-m-d') }}</td>
+                                        <td>{{ $finishedProduct->updated_at->format('d-m-Y') }}</td>
                                     </tr>
                                 </table>
                             </div>
